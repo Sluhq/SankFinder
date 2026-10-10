@@ -2,12 +2,12 @@ import Foundation
 
 struct VisitRecord: Identifiable, Codable {
     var id: String = UUID().uuidString
-    let barName: String
-    let address: String
-    let date: String
-    let amount: Double
-    let rating: Int // 1 do 5
-    let note: String
+    var barName: String
+    var address: String
+    var date: String
+    var amount: Double
+    var rating: Int // 1 do 5
+    var note: String
 }
 
 class HistoryManager: ObservableObject {
@@ -19,14 +19,9 @@ class HistoryManager: ObservableObject {
     
     init() {
         loadVisits()
-        if visits.isEmpty {
-            // Začetni vzorčni obiski
-            visits = [
-                VisitRecord(id: "1", barName: "Dvorni Bar", address: "Dvorni trg 2, Ljubljana", date: "Včeraj ob 21:30", amount: 14.50, rating: 5, note: "Odlična družba in prijazna postrežba!"),
-                VisitRecord(id: "2", barName: "Kolibri Bar", address: "Židovska steza 2, Ljubljana", date: "Petek ob 23:15", amount: 22.00, rating: 4, note: "Pivska runda s prijatelji.")
-            ]
-            saveVisits()
-        }
+        // Počisti vzorčne/lažne začetne obiske, ki jih je uporabnik želel odstraniti
+        visits.removeAll { $0.id == "1" || $0.id == "2" }
+        saveVisits()
     }
     
     func addVisit(barName: String, address: String, amount: Double = 0.0, rating: Int = 5, note: String = "") {
@@ -46,8 +41,26 @@ class HistoryManager: ObservableObject {
         saveVisits()
     }
     
+    func updateVisit(id: String, barName: String, address: String, amount: Double, rating: Int, note: String) {
+        if let idx = visits.firstIndex(where: { $0.id == id }) {
+            var existing = visits[idx]
+            existing.barName = barName
+            existing.address = address
+            existing.amount = amount
+            existing.rating = rating
+            existing.note = note
+            visits[idx] = existing
+            saveVisits()
+        }
+    }
+    
     func deleteVisit(at offsets: IndexSet) {
         visits.remove(atOffsets: offsets)
+        saveVisits()
+    }
+    
+    func deleteVisit(id: String) {
+        visits.removeAll { $0.id == id }
         saveVisits()
     }
     

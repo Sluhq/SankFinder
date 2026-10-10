@@ -34,20 +34,17 @@ struct Lokal: Identifiable, Codable, Equatable {
     
     func walkingMinutes(from location: CLLocationCoordinate2D?) -> Int {
         guard let d = distance(from: location) else { return 5 }
-        // Povprečna hitrost hoje: ~80 metrov na minuto (4.8 km/h)
         return max(1, Int(d / 80.0))
     }
     
-    // Pametno preverjanje statusa odprtosti
     var isOpenNow: Bool {
-        guard let hours = openingHours?.lowercased() else { return true } // privzeto odprto, če ni podatka
+        guard let hours = openingHours?.lowercased() else { return true }
         if hours.contains("24/7") || hours.contains("non-stop") { return true }
         
         let calendar = Calendar.current
         let hour = calendar.component(.hour, from: Date())
         
         if hours.contains("03:00") || hours.contains("04:00") {
-            // Nočni obrat: odprto ponoči do 03:00 ali 04:00
             return hour >= 9 || hour < 4
         }
         if hours.contains("22:00") {
@@ -62,14 +59,14 @@ struct Lokal: Identifiable, Codable, Equatable {
     var statusBadge: (text: String, isGreen: Bool) {
         if let hours = openingHours {
             if hours.contains("24/7") || hours.contains("non-stop") {
-                return ("🟢 Odprto (24/7)", true)
+                return ("Odprto (24/7)", true)
             }
             if isOpenNow {
-                return ("🟢 Odprto zdaj", true)
+                return ("Odprto zdaj", true)
             } else {
-                return ("🔴 Zaprto", false)
+                return ("Zaprto", false)
             }
         }
-        return ("🟢 Odprto", true)
+        return ("Odprto", true)
     }
 }

@@ -269,8 +269,9 @@ struct ToolsView: View {
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Theme.primaryContainerDark)
                         .frame(width: 36, height: 36)
-                    Text("🥐")
-                        .font(.system(size: 18))
+                    Image(systemName: "takeoutbag.and.cup.and.straw.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(Theme.beerGold)
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
@@ -434,15 +435,16 @@ struct ToolsView: View {
                         }
                     )
                 
-                Text("🍺")
-                    .font(.system(size: 40))
+                Image(systemName: "mug.fill")
+                    .font(.system(size: 32))
+                    .foregroundColor(Theme.beerGold)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             
             if let payer = selectedPayer {
                 VStack(spacing: 4) {
-                    Text("Rundo časti: \(payer)! 🍻")
+                    Text("Rundo časti: \(payer)!")
                         .font(.system(size: 17, weight: .black))
                         .foregroundColor(Theme.beerGold)
                     if let quote = funPayerQuote {
@@ -581,7 +583,7 @@ struct ToolsView: View {
                 }
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Končal sem / Pokliči taksi 🚕")
+                    Text("Končal sem / Pokliči taksi")
                         .font(.system(size: 15, weight: .bold))
                         .foregroundColor(.white)
                     Text("Šaljivo prepričevanje pred varno vrnitvijo domov")
@@ -611,7 +613,7 @@ struct ToolsView: View {
                     .foregroundColor(Theme.beerGold)
                 
                 VStack(spacing: 6) {
-                    Text("Čas je za domov... 🚕")
+                    Text("Čas je za domov...")
                         .font(.title2)
                         .fontWeight(.black)
                         .foregroundColor(.white)

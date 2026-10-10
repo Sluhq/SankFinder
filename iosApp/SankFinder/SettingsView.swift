@@ -152,7 +152,7 @@ struct SettingsView: View {
                             Divider().background(Color.white.opacity(0.08))
                             toggleRow(title: "Potrditev ali zavrnitev varne poti", subtitle: "Samodejni predlog klica taksija ob doseženem limitu pijač", isOn: $safeTripAlert)
                             Divider().background(Color.white.opacity(0.08))
-                            toggleRow(title: "Zvočni učinki točenja 🍺", subtitle: "Sproži zvočno animacijo ob dodajanju piva na števcu", isOn: $pourSoundEffects)
+                            toggleRow(title: "Zvočni učinki točenja", subtitle: "Sproži zvočno animacijo ob dodajanju piva na števcu", isOn: $pourSoundEffects)
                             Divider().background(Color.white.opacity(0.08))
                             toggleRow(title: "Nočni način šanka (Temna tema)", subtitle: "Privlačen temen videz za večerne izhode", isOn: $darkTheme)
                         }
@@ -217,7 +217,7 @@ struct SettingsView: View {
                             HStack {
                                 Image(systemName: "info.circle.fill")
                                     .foregroundColor(Theme.beerGold)
-                                Text("O aplikaciji ŠankFinder 🍻")
+                                Text("O aplikaciji ŠankFinder")
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.white)
                                 Spacer()
@@ -319,8 +319,9 @@ struct SettingsView: View {
             Theme.bgDark.edgesIgnoringSafeArea(.all)
             
             VStack(spacing: 20) {
-                Text("🍻")
-                    .font(.system(size: 64))
+                Image(systemName: "mug.fill")
+                    .font(.system(size: 54))
+                    .foregroundColor(Theme.beerGold)
                 
                 VStack(spacing: 6) {
                     Text("ŠankFinder")
@@ -341,9 +342,9 @@ struct SettingsView: View {
                         .padding(.horizontal, 20)
                     
                     VStack(spacing: 6) {
-                        Text("Kartografija: OpenStreetMap Mapnik 🗺️")
-                        Text("Peš usmerjanje: OSRM Routing Engine 🚶")
-                        Text("Skupina: Pivska Klapa v živo 👥")
+                        Text("Kartografija: OpenStreetMap Mapnik")
+                        Text("Peš usmerjanje: OSRM Routing Engine")
+                        Text("Skupina: Pivska Klapa v živo")
                     }
                     .font(.caption)
                     .foregroundColor(Theme.textMuted)

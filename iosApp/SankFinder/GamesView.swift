@@ -1,17 +1,17 @@
 import SwiftUI
 
 struct GamesView: View {
-    @State private var selectedTab: Int = 0 // 0: Alko kalkulator, 1: Ruleta, 2: Resnica/Izziv
+    @State private var selectedTab: Int = 0
     
-    // MARK: - Kalkulator promilov
+    // MARK: - Alko Merilnik
+    @State private var beersCount: Int = 0
+    @State private var wineCount: Int = 0
+    @State private var shotsCount: Int = 0
     @State private var weightKg: Double = 75.0
     @State private var isMale: Bool = true
-    @State private var beersCount: Int = 3      // 0.5l pivo (ca. 20g alkohola)
-    @State private var wineCount: Int = 0       // 2dcl vino (ca. 19g alkohola)
-    @State private var shotsCount: Int = 0      // 0.3dcl žganje (ca. 10g alkohola)
-    @State private var hoursSinceStart: Double = 2.0
+    @State private var hoursSinceStart: Double = 1.0
     
-    // MARK: - Ruleta
+    // MARK: - Pivska Ruleta
     @State private var rouletteResult: String = "Pritisni gumb za vrtenje!"
     @State private var isSpinning: Bool = false
     
@@ -19,13 +19,13 @@ struct GamesView: View {
     @State private var truthOrDarePrompt: String = "Izberi Resnico ali Izziv!"
     
     private let rouletteTasks = [
-        "🍻 Spij 2 požirka!",
-        "👥 Vsi za mizo spijejo požirek!",
-        "👉 Izberi soigralca, ki mora spiti cel kozarec!",
-        "🛡️ Varno mimo – ne piješ nič!",
-        "💃 Naredi 10 počepov ali spij požirek!",
-        "🎤 Zapoj refren znane slovenske pesmi!",
-        "🔄 Obratna runda: tisti na tvoji desni pije!"
+        "Spij 2 požirka!",
+        "Vsi za mizo spijejo požirek!",
+        "Izberi soigralca, ki mora spiti cel kozarec!",
+        "Varno mimo – ne piješ nič!",
+        "Naredi 10 počepov ali spij požirek!",
+        "Zapoj refren znane slovenske pesmi!",
+        "Obratna runda: tisti na tvoji desni pije!"
     ]
     
     private let truths = [
@@ -47,7 +47,7 @@ struct GamesView: View {
         let totalAlcoholGrams = Double(beersCount) * 20.0 + Double(wineCount) * 19.0 + Double(shotsCount) * 10.0
         let r = isMale ? 0.68 : 0.55
         let rawPromil = totalAlcoholGrams / (weightKg * r)
-        let metabolized = hoursSinceStart * 0.15 // telo razgradi ca. 0.15 promila na uro
+        let metabolized = hoursSinceStart * 0.15
         return max(0.0, rawPromil - metabolized)
     }
     
@@ -81,7 +81,7 @@ struct GamesView: View {
                     }
                 }
             }
-            .navigationTitle("Zabava & Igre 🍻")
+            .navigationTitle("Zabava & Igre")
             .navigationBarTitleDisplayMode(.inline)
         }
     }
@@ -99,48 +99,43 @@ struct GamesView: View {
             .padding(.vertical, 8)
             .background(selectedTab == index ? Theme.beerGold : Theme.cardDark)
             .foregroundColor(selectedTab == index ? .black : .white)
-            .cornerRadius(12)
+            .cornerRadius(10)
         }
     }
     
     // MARK: - Alko Kalkulator
     private var alkoCalculatorView: some View {
         VStack(spacing: 16) {
-            // Rezultat promilov
-            VStack(spacing: 6) {
+            // Glavna kartica s stanjem promilov
+            VStack(spacing: 8) {
                 Text(String(format: "%.2f ‰", calculatedPromils))
-                    .font(.system(size: 46, weight: .black))
+                    .font(.system(size: 48, weight: .heavy))
                     .foregroundColor(calculatedPromils > 0.5 ? Theme.drajvRed : Theme.beerGold)
                 
                 Text(promilStatusText)
-                    .font(.headline)
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .multilineTextAlignment(.center)
                     .foregroundColor(.white)
                 
                 if calculatedPromils > 0 {
-                    Text("Čas do 0.0‰: ca. \(String(format: "%.1f", timeUntilSoberHours)) ur")
+                    Text(String(format: "Čas do popolne treznosti: cca %.1f h", timeUntilSoberHours))
                         .font(.caption)
-                        .foregroundColor(.appMuted)
+                        .foregroundColor(Theme.textMuted)
                 }
             }
             .frame(maxWidth: .infinity)
             .padding(20)
             .background(Theme.cardDark)
             .cornerRadius(18)
-            .overlay(
-                RoundedRectangle(cornerRadius: 18)
-                    .stroke(Theme.beerGold.opacity(0.3), lineWidth: 1)
-            )
             .padding(.horizontal, 16)
             
             // Nastavitve uporabnika
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Tvoji podatki:")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                
+            VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     Text("Spol:")
-                        .foregroundColor(.appMuted)
+                        .font(.subheadline)
+                        .foregroundColor(.white)
                     Spacer()
                     Picker("Spol", selection: $isMale) {
                         Text("Moški").tag(true)
@@ -151,20 +146,20 @@ struct GamesView: View {
                 }
                 
                 HStack {
-                    Text("Telesna teža: \(Int(weightKg)) kg")
-                        .foregroundColor(.appMuted)
+                    Text("Teža: \(Int(weightKg)) kg")
+                        .font(.subheadline)
+                        .foregroundColor(.white)
                     Spacer()
                     Slider(value: $weightKg, in: 45...130, step: 1)
-                        .accentColor(Theme.beerGold)
                         .frame(width: 160)
                 }
                 
                 HStack {
-                    Text("Čas od prve pijače: \(String(format: "%.1f", hoursSinceStart)) h")
-                        .foregroundColor(.appMuted)
+                    Text("Čas pitja: \(String(format: "%.1f", hoursSinceStart)) h")
+                        .font(.subheadline)
+                        .foregroundColor(.white)
                     Spacer()
-                    Slider(value: $hoursSinceStart, in: 0.5...12, step: 0.5)
-                        .accentColor(Theme.beerGold)
+                    Slider(value: $hoursSinceStart, in: 0.5...8.0, step: 0.5)
                         .frame(width: 160)
                 }
             }
@@ -175,9 +170,9 @@ struct GamesView: View {
             
             // Števec pijač
             VStack(spacing: 12) {
-                drinkCounter(title: "Pivo (0.5 L)", count: $beersCount, icon: "🍺")
-                drinkCounter(title: "Vino (2 dcl)", count: $wineCount, icon: "🍷")
-                drinkCounter(title: "Žgana pijača (kratki)", count: $shotsCount, icon: "🥃")
+                drinkCounter(title: "Pivo (0.5 L)", count: $beersCount, icon: "mug.fill")
+                drinkCounter(title: "Vino (2 dcl)", count: $wineCount, icon: "wineglass.fill")
+                drinkCounter(title: "Žgana pijača (kratki)", count: $shotsCount, icon: "drop.fill")
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 24)
@@ -186,8 +181,10 @@ struct GamesView: View {
     
     private func drinkCounter(title: String, count: Binding<Int>, icon: String) -> some View {
         HStack {
-            Text(icon)
-                .font(.title2)
+            Image(systemName: icon)
+                .font(.title3)
+                .foregroundColor(Theme.beerGold)
+                .frame(width: 28)
             Text(title)
                 .font(.subheadline)
                 .foregroundColor(.white)
@@ -202,7 +199,7 @@ struct GamesView: View {
             Text("\(count.wrappedValue)")
                 .font(.headline)
                 .fontWeight(.bold)
-                .foregroundColor(.beerGold)
+                .foregroundColor(Theme.beerGold)
                 .frame(width: 28)
             
             Button(action: { count.wrappedValue += 1 }) {
@@ -233,7 +230,7 @@ struct GamesView: View {
     // MARK: - Pivska Ruleta
     private var rouletteView: some View {
         VStack(spacing: 24) {
-            Text("🎯 Šankovska Ruleta")
+            Text("Šankovska Ruleta")
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
@@ -282,7 +279,7 @@ struct GamesView: View {
     // MARK: - Resnica ali Izziv
     private var truthOrDareView: some View {
         VStack(spacing: 20) {
-            Text("🤫 Resnica ali Izziv")
+            Text("Resnica ali Izziv")
                 .font(.title2)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
@@ -301,17 +298,17 @@ struct GamesView: View {
             
             HStack(spacing: 16) {
                 Button(action: { truthOrDarePrompt = truths.randomElement() ?? "" }) {
-                    Text("Resnica 💬")
+                    Text("Resnica")
                         .fontWeight(.bold)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)
                         .background(Theme.surfaceDark)
-                        .foregroundColor(.beerGold)
+                        .foregroundColor(Theme.beerGold)
                         .cornerRadius(14)
                 }
                 
                 Button(action: { truthOrDarePrompt = dares.randomElement() ?? "" }) {
-                    Text("Izziv 🔥")
+                    Text("Izziv")
                         .fontWeight(.bold)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 14)

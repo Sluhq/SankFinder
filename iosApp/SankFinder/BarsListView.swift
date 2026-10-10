@@ -86,7 +86,7 @@ struct BarsListView: View {
                             selectedFilter = 0
                         }
                         
-                        MaterialFilterChip(title: "🟢 Samo odprto zdaj", isSelected: selectedFilter == 1) {
+                        MaterialFilterChip(title: "Samo odprto zdaj", isSelected: selectedFilter == 1) {
                             selectedFilter = 1
                         }
                         
@@ -218,7 +218,7 @@ struct BarsListView: View {
                 Spacer()
                 
                 if isVisited {
-                    Text("✓ Obiskano")
+                    Text("Obiskano")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(Theme.drajvGreen)
                         .padding(.horizontal, 8)

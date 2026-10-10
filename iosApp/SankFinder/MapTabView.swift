@@ -37,7 +37,7 @@ struct MapTabView: View {
             // 2. KONTROLE IN ZGORNJI / SPODNJI HUD
             VStack(spacing: 8) {
                 if let route = activeRoute, let target = selectedBar ?? bridge.targetLokalForNavigation {
-                    // Turn-by-Turn Zgornji Zeleni HUD (Google Maps / Android slog)
+                    // Turn-by-Turn Zgornji Zeleni HUD (#1B5E20 / Google Maps slog)
                     navigationTurnHud(route: route)
                         .transition(.move(edge: .top).combined(with: .opacity))
                 } else {
@@ -46,7 +46,7 @@ struct MapTabView: View {
                 
                 Spacer()
                 
-                // Desni kontrolni stolpec (Kompas, Moja Lokacija, Osveži)
+                // Desni kontrolni stolpec (Moja Lokacija, Osveži)
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
@@ -103,7 +103,6 @@ struct MapTabView: View {
             locationManager.requestPermission()
             refreshBars()
             
-            // Če je prišla zahteva za navigacijo iz drugega zavihka
             if let target = bridge.targetLokalForNavigation {
                 selectedBar = target
                 calculateRoute(to: target)
@@ -123,27 +122,13 @@ struct MapTabView: View {
             }
         }
         .alert(isPresented: $showAddedToHistoryAlert) {
-            Alert(title: Text("Obisk zabeležen! 🍻"), message: Text("Lokal je bil dodan v tvojo Zgodovino obiskov."), dismissButton: .default(Text("V redu")))
+            Alert(title: Text("Obisk zabeležen"), message: Text("Lokal je bil dodan v tvojo Zgodovino obiskov."), dismissButton: .default(Text("V redu")))
         }
     }
     
-    // MARK: - Zgornja vrstica
+    // MARK: - Zgornja vrstica brez oznake 'ŠankFinder' in brez emojijev
     private var topControlsBar: some View {
         HStack {
-            HStack(spacing: 8) {
-                Text("🍺")
-                    .font(.title2)
-                Text("ŠankFinder")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(Theme.cardDark.opacity(0.92))
-            .cornerRadius(20)
-            .shadow(radius: 4)
-            
             Spacer()
             
             Menu {
@@ -152,31 +137,30 @@ struct MapTabView: View {
                 Button("2 km") { searchRadius = 2000; refreshBars() }
                 Button("5 km") { searchRadius = 5000; refreshBars() }
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 6) {
                     Image(systemName: "slider.horizontal.3")
-                    Text("\(searchRadius < 1000 ? "\(searchRadius)m" : "\(searchRadius/1000)km")")
+                    Text("\(searchRadius < 1000 ? "\(searchRadius) m" : "\(searchRadius/1000) km")")
                 }
                 .font(.subheadline)
-                .fontWeight(.medium)
+                .fontWeight(.semibold)
                 .foregroundColor(.beerGold)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(Theme.cardDark.opacity(0.92))
                 .cornerRadius(20)
-                .shadow(radius: 4)
+                .shadow(color: .black.opacity(0.35), radius: 4)
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
     }
     
-    // MARK: - Zgornji zeleni Turn-by-Turn HUD (identičen Androidu #1B5E20)
+    // MARK: - Zgornji zeleni Turn-by-Turn HUD (#1B5E20)
     private func navigationTurnHud(route: OsrmRoute) -> some View {
         let steps = route.legs?.first?.steps ?? []
         let currentStep = steps.indices.contains(currentStepIndex) ? steps[currentStepIndex] : steps.first
         
         return HStack(spacing: 14) {
-            // Smerna ikona v belem krogu
             ZStack {
                 Circle()
                     .fill(Color.white.opacity(0.25))
@@ -203,7 +187,7 @@ struct MapTabView: View {
             
             Spacer()
             
-            Button(action: { activeRoute = nil }) {
+            Button(action: { activeRoute = nil; selectedBar = nil }) {
                 Image(systemName: "xmark")
                     .font(.headline)
                     .foregroundColor(.white)
@@ -213,7 +197,7 @@ struct MapTabView: View {
             }
         }
         .padding(14)
-        .background(Color(red: 27/255, green: 94/255, blue: 32/255)) // #1B5E20 Google Maps temno zelena
+        .background(Color(red: 27/255, green: 94/255, blue: 32/255))
         .cornerRadius(18)
         .shadow(color: .black.opacity(0.5), radius: 8)
         .padding(.horizontal, 14)
@@ -228,7 +212,7 @@ struct MapTabView: View {
                     Text(route.formattedDuration)
                         .font(.headline)
                         .fontWeight(.bold)
-                        .foregroundColor(Color(red: 46/255, green: 125/255, blue: 50/255)) // Zelena #2E7D32
+                        .foregroundColor(Color(red: 46/255, green: 125/255, blue: 50/255))
                     
                     Text("•  \(route.formattedDistance)")
                         .font(.subheadline)
@@ -288,7 +272,6 @@ struct MapTabView: View {
             }
             
             HStack(spacing: 12) {
-                // Status odprtosti
                 Text(bar.statusBadge.text)
                     .font(.caption)
                     .fontWeight(.semibold)
@@ -300,7 +283,6 @@ struct MapTabView: View {
                 
                 Spacer()
                 
-                // Gumb za shranjevanje obiska
                 Button(action: {
                     history.addVisit(barName: bar.name, address: bar.address)
                     showAddedToHistoryAlert = true
@@ -318,7 +300,6 @@ struct MapTabView: View {
                 }
             }
             
-            // Gumba za navigacijo in klic
             HStack(spacing: 10) {
                 Button(action: { calculateRoute(to: bar) }) {
                     HStack {
@@ -328,7 +309,7 @@ struct MapTabView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color(red: 46/255, green: 125/255, blue: 50/255)) // #2E7D32 Zelena
+                    .background(Color(red: 46/255, green: 125/255, blue: 50/255))
                     .foregroundColor(.white)
                     .cornerRadius(12)
                 }

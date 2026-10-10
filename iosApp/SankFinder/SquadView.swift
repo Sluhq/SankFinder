@@ -1,68 +1,81 @@
 import SwiftUI
 
 struct SquadView: View {
-    @StateObject private var squad = SquadManager.shared
+    @ObservedObject private var squad = SquadManager.shared
     @State private var roomCodeInput: String = ""
-    @State private var roomNameInput: String = "Pivska Klapa"
-    @State private var nicknameInput: String = SquadManager.shared.myUserName
+    @State private var roomNameInput: String = ""
+    @State private var nicknameInput: String = ""
     @State private var messageInput: String = ""
-    @State private var selectedTab: Int = 0 // 0: Pridruži se, 1: Ustvari novo
+    @State private var selectedTab: Int = 0 // 0 = Vstopi, 1 = Ustvari
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                Theme.bgDark.edgesIgnoringSafeArea(.all)
-                
-                if let room = squad.activeRoom {
-                    activeRoomView(room: room)
-                } else {
-                    joinOrCreateRoomView
-                }
-                
-                if squad.isLoading {
-                    ProgressView()
-                        .progressViewStyle(CircularProgressViewStyle(tint: .beerGold))
-                        .scaleEffect(1.4)
-                        .padding(20)
-                        .background(Theme.cardDark.opacity(0.85))
-                        .cornerRadius(12)
-                }
-            }
-            .navigationTitle(squad.activeRoom == nil ? "Pivska Klapa" : "Soba: \(squad.activeRoom!.code)")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                if squad.activeRoom != nil {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button("Zapusti") {
-                            squad.leaveRoom()
+        ZStack {
+            Theme.bgDark.edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 0) {
+                // MATERIAL 3 TOP APP BAR
+                MaterialTopAppBar(
+                    title: squad.activeRoom != nil ? squad.activeRoom!.name : "Pivska Klapa",
+                    showBackButton: false
+                ) {
+                    if squad.activeRoom != nil {
+                        Button(action: { squad.leaveRoom() }) {
+                            Text("Zapusti")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Theme.drajvRed)
                         }
-                        .foregroundColor(Theme.drajvRed)
                     }
                 }
+                
+                if let alert = squad.bannerAlert {
+                    HStack {
+                        Image(systemName: "bell.fill")
+                            .foregroundColor(Theme.beerGold)
+                        Text(alert)
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(.white)
+                        Spacer()
+                        Button(action: { squad.bannerAlert = nil }) {
+                            Image(systemName: "xmark")
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color(red: 27/255, green: 94/255, blue: 32/255))
+                }
+                
+                if squad.activeRoom == nil {
+                    joinOrCreateRoomView
+                } else {
+                    activeSquadView
+                }
             }
-            .onAppear {
-                GlobalSyncManager.shared.reportScreen("Pivska Klapa")
-            }
+        }
+        .onAppear {
+            GlobalSyncManager.shared.reportScreen("Pivska Klapa")
+            nicknameInput = squad.myUserName
         }
     }
     
     // MARK: - Vstop / Ustvari sobo
     private var joinOrCreateRoomView: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 18) {
             Spacer()
             
-            Text("👥")
-                .font(.system(size: 64))
+            Image(systemName: "person.3.fill")
+                .font(.system(size: 54))
+                .foregroundColor(Theme.beerGold)
             
             Text("Pivska Klapa")
                 .font(.title)
                 .fontWeight(.bold)
                 .foregroundColor(.white)
             
-            Text("Poveži se s prijatelji v živo, spremljaj lokacijo na radirju in štejte runde!")
+            Text("Poveži se s prijatelji v živo, spremljaj lokacijo na radarju in beležite skupne runde.")
                 .font(.subheadline)
                 .multilineTextAlignment(.center)
-                .foregroundColor(.appMuted)
+                .foregroundColor(Theme.textMuted)
                 .padding(.horizontal, 32)
             
             // Preklop med Pridruži se in Ustvari novo
@@ -87,7 +100,7 @@ struct SquadView: View {
             }
             .cornerRadius(12)
             .padding(.horizontal, 24)
-            .padding(.top, 10)
+            .padding(.top, 8)
             
             VStack(spacing: 12) {
                 TextField("Tvoj vzdevek", text: $nicknameInput)
@@ -100,112 +113,123 @@ struct SquadView: View {
                     .foregroundColor(.white)
                 
                 if selectedTab == 0 {
-                    TextField("4-mestna koda sobe (npr. VIKEND)", text: $roomCodeInput)
+                    TextField("4-mestna koda (npr. PANK)", text: $roomCodeInput)
+                        .textCase(.uppercase)
                         .padding(14)
                         .background(Theme.cardDark)
                         .cornerRadius(12)
                         .foregroundColor(.white)
-                        .autocapitalization(.allCharacters)
-                } else {
-                    TextField("Ime klape (npr. Petkova runda)", text: $roomNameInput)
-                        .padding(14)
-                        .background(Theme.cardDark)
+                    
+                    Button(action: {
+                        Task { await squad.joinRoom(code: roomCodeInput) }
+                    }) {
+                        HStack {
+                            if squad.isLoading {
+                                ProgressView().tint(.black)
+                            } else {
+                                Text("Vstopi v klapo")
+                                    .fontWeight(.bold)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Theme.beerGold)
+                        .foregroundColor(.black)
                         .cornerRadius(12)
-                        .foregroundColor(.white)
-                }
-            }
-            .padding(.horizontal, 24)
-            
-            if let err = squad.errorMessage {
-                Text(err)
-                    .font(.caption)
-                    .foregroundColor(Theme.drajvRed)
-                    .padding(.horizontal, 24)
-            }
-            
-            Button(action: {
-                squad.setUserName(nicknameInput)
-                Task {
-                    if selectedTab == 0 {
-                        await squad.joinRoom(code: roomCodeInput)
-                    } else {
-                        await squad.createRoom(name: roomNameInput)
                     }
+                    .disabled(squad.isLoading || roomCodeInput.trimmingCharacters(in: .whitespaces).isEmpty)
+                } else {
+                    TextField("Ime klape (npr. Petkov pohod)", text: $roomNameInput)
+                        .padding(14)
+                        .background(Theme.cardDark)
+                        .cornerRadius(12)
+                        .foregroundColor(.white)
+                    
+                    Button(action: {
+                        Task { await squad.createRoom(name: roomNameInput) }
+                    }) {
+                        HStack {
+                            if squad.isLoading {
+                                ProgressView().tint(.black)
+                            } else {
+                                Text("Ustvari novo klapo")
+                                    .fontWeight(.bold)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Theme.beerGold)
+                        .foregroundColor(.black)
+                        .cornerRadius(12)
+                    }
+                    .disabled(squad.isLoading)
                 }
-            }) {
-                HStack {
-                    Image(systemName: selectedTab == 0 ? "arrow.right.circle.fill" : "plus.circle.fill")
-                    Text(selectedTab == 0 ? "Vstopi v Klapo" : "Ustvari Klapo")
-                        .fontWeight(.bold)
+                
+                if let err = squad.errorMessage {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundColor(Theme.drajvRed)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Theme.beerGold)
-                .foregroundColor(.black)
-                .cornerRadius(12)
             }
             .padding(.horizontal, 24)
             
             Spacer()
         }
+        .padding(.bottom, 80)
     }
     
-    // MARK: - Aktivna soba z živim klepetom in rundami
-    private func activeRoomView(room: SquadRoom) -> some View {
-        VStack(spacing: 10) {
-            // Glava s statusom povezave
-            HStack {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(squad.isConnected ? Theme.drajvGreen : Color.orange)
-                        .frame(width: 8, height: 8)
-                    Text(squad.isConnected ? "Povezava v živo (OK)" : "Povezovanje...")
-                        .font(.caption2)
-                        .foregroundColor(.appMuted)
-                }
-                
-                Spacer()
-                
-                Text("Koda: ")
-                    .font(.caption)
-                    .foregroundColor(.appMuted)
-                Text(room.code)
-                    .font(.headline)
-                    .fontWeight(.black)
-                    .foregroundColor(.beerGold)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 4)
-            
-            // Opozorilni banner (npr. Luka časti rundo!)
-            if let alert = squad.bannerAlert {
+    // MARK: - Aktivna soba z živo kodo in klepetom
+    private var activeSquadView: some View {
+        VStack(spacing: 8) {
+            // Glava s kodo za povabilo
+            if let room = squad.activeRoom {
                 HStack {
-                    Text(alert)
-                        .font(.subheadline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.black)
-                    Spacer()
-                    Button(action: { squad.bannerAlert = nil }) {
-                        Image(systemName: "xmark")
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(room.name)
+                            .font(.headline)
+                            .fontWeight(.bold)
                             .foregroundColor(.black)
+                        Text("Koda za vstop: \(room.code)")
+                            .font(.subheadline)
+                            .fontWeight(.heavy)
+                            .foregroundColor(.black.opacity(0.8))
+                    }
+                    Spacer()
+                    Button(action: {
+                        UIPasteboard.general.string = room.code
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "doc.on.doc")
+                            Text("Kopiraj")
+                        }
+                        .font(.caption)
+                        .fontWeight(.bold)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.black.opacity(0.15))
+                        .foregroundColor(.black)
+                        .cornerRadius(8)
                     }
                 }
                 .padding(12)
                 .background(Theme.beerGold)
-                .cornerRadius(12)
+                .cornerRadius(14)
                 .padding(.horizontal, 16)
+                .padding(.top, 6)
             }
             
-            // Runda Tracker & Osebni števec
+            // Števec pijač in runda
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Tvoje pijače:")
                         .font(.caption)
-                        .foregroundColor(.appMuted)
-                    Text("\(squad.myDrinksCount) 🍺")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.beerGold)
+                        .foregroundColor(Theme.textMuted)
+                    Text("\(squad.myDrinksCount) pijač")
+                        .font(.title3)
+                        .fontWeight(.black)
+                        .foregroundColor(Theme.beerGold)
                 }
                 
                 Spacer()
@@ -213,7 +237,7 @@ struct SquadView: View {
                 Button(action: { squad.incrementDrink() }) {
                     HStack(spacing: 4) {
                         Image(systemName: "plus")
-                        Text("Spil pijačo!")
+                        Text("Spil pijačo")
                     }
                     .font(.caption)
                     .fontWeight(.bold)
@@ -224,14 +248,14 @@ struct SquadView: View {
                     .cornerRadius(8)
                 }
                 
-                Button(action: { squad.sendChatMessage("🍻 Jaz častim naslednjo rundo!", msgType: "round_call") }) {
-                    Text("Častim rundo! 🎉")
+                Button(action: { squad.sendChatMessage("Jaz častim naslednjo rundo!", msgType: "round_call") }) {
+                    Text("Častim rundo")
                         .font(.caption)
                         .fontWeight(.bold)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
                         .background(Theme.surfaceDark)
-                        .foregroundColor(.beerGold)
+                        .foregroundColor(Theme.beerGold)
                         .cornerRadius(8)
                 }
             }
@@ -259,9 +283,9 @@ struct SquadView: View {
                                 .foregroundColor(.white)
                                 .lineLimit(1)
                             
-                            Text("\(m.drinksCount) 🍺")
+                            Text("\(m.drinksCount) pijač")
                                 .font(.system(size: 10))
-                                .foregroundColor(.beerAmber)
+                                .foregroundColor(Theme.beerAmber)
                         }
                         .frame(width: 58)
                     }
@@ -269,7 +293,7 @@ struct SquadView: View {
                 .padding(.horizontal, 16)
             }
             
-            // Klepet
+            // Klepet v živo
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 8) {
@@ -290,11 +314,11 @@ struct SquadView: View {
                 }
             }
             
-            // Hitre fraze
+            // Hitre fraze brez emojijev
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     quickPhraseButton("Kje ste?")
-                    quickPhraseButton("Na zdravje! 🍻")
+                    quickPhraseButton("Na zdravje!")
                     quickPhraseButton("Še eno rundo!")
                     quickPhraseButton("Kdaj gremo naprej?")
                 }
@@ -319,47 +343,10 @@ struct SquadView: View {
                         .background(Theme.beerGold)
                         .clipShape(Circle())
                 }
+                .disabled(messageInput.trimmingCharacters(in: .whitespaces).isEmpty)
             }
             .padding(.horizontal, 16)
-            .padding(.bottom, 8)
-        }
-    }
-    
-    private func chatBubble(msg: SquadMessage) -> some View {
-        let isMe = msg.senderId == squad.myUserId
-        let isSystem = msg.msgType == "system" || msg.senderId == "system"
-        let isRound = msg.msgType == "round_call"
-        
-        return HStack {
-            if isMe { Spacer() }
-            
-            VStack(alignment: isMe ? .trailing : .leading, spacing: 2) {
-                if !isMe && !isSystem {
-                    Text(msg.senderName)
-                        .font(.caption2)
-                        .fontWeight(.bold)
-                        .foregroundColor(.beerGold)
-                }
-                
-                Text(msg.content)
-                    .font(.subheadline)
-                    .padding(10)
-                    .background(
-                        isSystem ? Theme.surfaceDark :
-                        isRound ? Theme.beerGold :
-                        isMe ? Theme.beerGold.opacity(0.85) : Theme.cardDark
-                    )
-                    .foregroundColor(isRound || (isMe && !isSystem) ? .black : .white)
-                    .cornerRadius(12)
-                
-                if !msg.createdAt.isEmpty {
-                    Text(msg.createdAt)
-                        .font(.system(size: 9))
-                        .foregroundColor(.appMuted)
-                }
-            }
-            
-            if !isMe { Spacer() }
+            .padding(.bottom, 80)
         }
     }
     
@@ -367,11 +354,53 @@ struct SquadView: View {
         Button(action: { squad.sendChatMessage(text) }) {
             Text(text)
                 .font(.caption2)
+                .fontWeight(.medium)
                 .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Theme.cardDark)
-                .foregroundColor(.white)
-                .cornerRadius(10)
+                .padding(.vertical, 6)
+                .background(Theme.surfaceDark)
+                .foregroundColor(Theme.beerGold)
+                .cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.beerGold.opacity(0.4), lineWidth: 1))
+        }
+    }
+    
+    private func chatBubble(msg: SquadMessage) -> some View {
+        let isMe = msg.senderId == squad.myUserId
+        let isSystem = msg.msgType == "system" || msg.senderId == "system"
+        
+        return HStack {
+            if isSystem {
+                Spacer()
+                Text(msg.content)
+                    .font(.caption2)
+                    .foregroundColor(Theme.textMuted)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(Theme.surfaceDark.opacity(0.6))
+                    .cornerRadius(10)
+                Spacer()
+            } else {
+                if isMe { Spacer() }
+                
+                VStack(alignment: isMe ? .trailing : .leading, spacing: 2) {
+                    if !isMe {
+                        Text(msg.senderName)
+                            .font(.caption2)
+                            .foregroundColor(Theme.beerGold)
+                            .fontWeight(.bold)
+                    }
+                    
+                    Text(msg.content)
+                        .font(.subheadline)
+                        .foregroundColor(isMe ? .black : .white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(isMe ? Theme.beerGold : Theme.cardDark)
+                        .cornerRadius(14)
+                }
+                
+                if !isMe { Spacer() }
+            }
         }
     }
 }

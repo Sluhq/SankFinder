@@ -13,7 +13,7 @@ class GlobalSyncManager: ObservableObject {
     private var pingTimer: Timer?
     private var reconnectTimer: Timer?
     
-    private var currentScreen: String = "Zemljevid & Šanki"
+    private var currentScreen: String = "Glavna stran"
     private var deviceId: String {
         if let id = UserDefaults.standard.string(forKey: "sankfinder_device_id") {
             return id
@@ -37,14 +37,14 @@ class GlobalSyncManager: ObservableObject {
     private func connect() {
         disconnect()
         
-        let model = UIDevice.current.model
+        let model = UIDevice.current.name.isEmpty ? UIDevice.current.model : UIDevice.current.name
         let os = "iOS \(UIDevice.current.systemVersion)"
         
         let encModel = model.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "iPhone"
         let encOs = os.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "iOS"
-        let encScreen = currentScreen.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "Main"
+        let encScreen = currentScreen.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "Glavna"
         
-        let urlString = "wss://sankfinder.sluga.me/ws?clientType=app&deviceId=\(deviceId)&model=\(encModel)&os=\(encOs)&screen=\(encScreen)&version=1.2"
+        let urlString = "wss://sankfinder.sluga.me/ws?clientType=app&deviceId=\(deviceId)&model=\(encModel)&os=\(encOs)&screen=\(encScreen)&version=1.0"
         guard let url = URL(string: urlString) else { return }
         
         let request = URLRequest(url: url)
@@ -80,9 +80,9 @@ class GlobalSyncManager: ObservableObject {
                 default:
                     break
                 }
-                self.listenForMessages() // Poslušaj naprej
+                self.listenForMessages()
             case .failure(let error):
-                print("Global WS prekinjen: \(error.localizedDescription)")
+                print("GlobalSync WS začasna prekinitev: \(error.localizedDescription)")
                 DispatchQueue.main.async {
                     self.isConnected = false
                 }
@@ -109,12 +109,19 @@ class GlobalSyncManager: ObservableObject {
     
     private func startPingTimer() {
         pingTimer?.invalidate()
-        pingTimer = Timer.scheduledTimer(withTimeInterval: 12.0, repeats: true) { [weak self] _ in
+        pingTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
             self?.sendPing()
         }
     }
     
     private func sendPing() {
+        webSocketTask?.sendPing { error in
+            if error != nil {
+                // Če ping ne gre skozi, poskusi s ponovno povezavo
+                self.scheduleReconnect()
+            }
+        }
+        
         let pingObj = ["type": "ping"]
         if let data = try? JSONSerialization.data(withJSONObject: pingObj),
            let str = String(data: data, encoding: .utf8) {
@@ -132,7 +139,7 @@ class GlobalSyncManager: ObservableObject {
     
     private func scheduleReconnect() {
         reconnectTimer?.invalidate()
-        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 6.0, repeats: false) { [weak self] _ in
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
             self?.connect()
         }
     }
