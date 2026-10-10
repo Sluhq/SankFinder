@@ -1,26 +1,54 @@
 import SwiftUI
 
 struct Theme {
-    static let beerGold = Color(red: 255/255, green: 183/255, blue: 3/255) // #FFB703
-    static let beerAmber = Color(red: 217/255, green: 119/255, blue: 6/255) // #D97706
-    static let beerDark = Color(red: 180/255, green: 83/255, blue: 9/255) // #B45309
+    // ŠankFinder custom vibrant palette (identično Android Color.kt)
+    static let beerGold = Color(hex: 0xFFFFB703)
+    static let beerAmber = Color(hex: 0xFFFB8500)
+    static let beerDarkAmber = Color(hex: 0xFFD97706)
+    static let beerLiquidBottom = Color(hex: 0xFFB45309)
+    static let beerFoamWhite = Color(hex: 0xFFFFFDF5)
+    static let beerFoamBubble = Color(hex: 0xFFFEF3C7)
     
-    static let bgDark = Color(red: 11/255, green: 15/255, blue: 25/255) // #0B0F19
-    static let cardDark = Color(red: 22/255, green: 31/255, blue: 48/255) // #161F30
-    static let surfaceDark = Color(red: 30/255, green: 41/255, blue: 59/255) // #1E293B
+    // DRAJV statusne barve
+    static let drajvGreen = Color(hex: 0xFF22C55E)
+    static let drajvRed = Color(hex: 0xFFEF4444)
     
-    static let drajvGreen = Color(red: 5/255, green: 150/255, blue: 105/255) // #059669
-    static let drajvRed = Color(red: 239/255, green: 68/255, blue: 68/255) // #EF4444
-    static let textLight = Color(red: 248/255, green: 250/255, blue: 252/255)
-    static let textMuted = Color(red: 148/255, green: 163/255, blue: 184/255)
+    // Material 3 Dark površine (identično Android Color.kt)
+    static let bgDark = Color(hex: 0xFF0B0F17)             // backgroundDark
+    static let surfaceDark = Color(hex: 0xFF111827)        // surfaceDark
+    static let surfaceVariantDark = Color(hex: 0xFF1F2937) // surfaceVariantDark
+    static let cardDark = Color(hex: 0xFF161F30)           // DarkCardSurface
+    static let darkBorder = Color(hex: 0xFF2B3950)         // DarkBorder
+    static let outlineDark = Color(hex: 0xFF374151)        // outlineDark
+    
+    // Besedilo in kontrasti
+    static let textLight = Color(hex: 0xFFF1F5F9)          // onSurfaceDark
+    static let textMuted = Color(hex: 0xFFCBD5E1)          // onSurfaceVariantDark
+    static let primaryContainerDark = Color(hex: 0xFF3B2D1B)
 }
 
 extension Color {
+    init(hex: UInt, alpha: Double = 1.0) {
+        self.init(
+            .sRGB,
+            red: Double((hex >> 16) & 0xff) / 255,
+            green: Double((hex >> 08) & 0xff) / 255,
+            blue: Double((hex >> 00) & 0xff) / 255,
+            opacity: alpha
+        )
+    }
+    
     static let beerGold = Theme.beerGold
     static let beerAmber = Theme.beerAmber
+    static let beerDarkAmber = Theme.beerDarkAmber
+    static let drajvGreen = Theme.drajvGreen
+    static let drajvRed = Theme.drajvRed
+    
     static let appBg = Theme.bgDark
-    static let appCard = Theme.cardDark
     static let appSurface = Theme.surfaceDark
+    static let appSurfaceVariant = Theme.surfaceVariantDark
+    static let appCard = Theme.cardDark
+    static let appBorder = Theme.darkBorder
     static let appText = Theme.textLight
     static let appMuted = Theme.textMuted
 }

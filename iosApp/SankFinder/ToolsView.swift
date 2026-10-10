@@ -5,23 +5,24 @@ struct ToolsView: View {
     @ObservedObject var locationManager: LocationManager
     @ObservedObject private var bridge = NavigationBridge.shared
     @ObservedObject private var squad = SquadManager.shared
+    @StateObject private var network = NetworkManager.shared
     
-    // MARK: - 1. Ruleta šankov (Naključni lokal)
-    @State private var randomBar: Lokal?
+    // 1. RULETA ŠANKOV
+    @State private var randomBar: Lokal? = nil
     @State private var isRollingRandom: Bool = false
     
-    // MARK: - 2. Kolo "Kdo plača rundo?"
+    // 2. KOLO "KDO PLAČA RUNDO?"
     @State private var friendsList: [String] = ["Ti", "Luka", "Maja", "Žiga"]
     @State private var newFriendInput: String = ""
     @State private var selectedPayer: String? = nil
+    @State private var funPayerQuote: String? = nil
     @State private var wheelAngle: Double = 0.0
     @State private var isSpinningWheel: Bool = false
     
-    // MARK: - 3. Burek Pavza
+    // 3. BUREK PAVZA
     @State private var onlyOpenBurek: Bool = false
     @State private var showAllBureks: Bool = false
     
-    // Legendarni burek kotički (identični kot na Androidu)
     let burekSpots = [
         Lokal(name: "Pekarna Legiša (Rimska)", address: "Rimska cesta 16, Ljubljana", lat: 46.0468, lon: 14.5015, cuisine: "Pekarna, Burek, Pečivo", phone: "+386 41 742 686", website: nil, openingHours: "Pon-Pet 06:00 - 19:00, Sob 07:00 - 13:00"),
         Lokal(name: "Pekarna Dvojka", address: "Nazorjeva ulica 6, Ljubljana", lat: 46.0526, lon: 14.5042, cuisine: "Pekarna, Sendviči, Burek", phone: "+386 1 425 70 80", website: nil, openingHours: "Pon-Ned 06:00 - 03:00 (Nočni obrat)"),
@@ -35,246 +36,284 @@ struct ToolsView: View {
         Lokal(name: "Burek Šiška", address: "Celovška cesta 111, Ljubljana", lat: 46.0689, lon: 14.4892, cuisine: "Burek, Pekarna, Pite", phone: "+386 1 515 22 11", website: nil, openingHours: "24/7 Non-stop")
     ]
     
-    // MARK: - 4. Razdeli račun
+    // 4. RAZDELI RAČUN
     @State private var totalBillAmount: String = "48.50"
     @State private var peopleCount: Int = 4
-    @State private var selectedTipIndex: Int = 0 // 0: 0%, 1: 5%, 2: 10%, 3: 15%
+    @State private var selectedTipIndex: Int = 0
     let tipOptions = [0.0, 0.05, 0.10, 0.15]
     
-    // MARK: - 5. Taksi pregovarjanje
+    // 5. TAKSI PREGOVARJANJE (3 do 6 stopenj)
     @State private var isTaxiConvincing: Bool = false
     @State private var currentTaxiConvinceIndex: Int = 0
     @State private var maxTaxiSteps: Int = 4
     @State private var showFinalTaxiModal: Bool = false
     
-    let taxiSteps = [
-        ("Si res prepričan, da odnehaš? 🍻", "Noč v mestu je še mlada, pipe pa še točijo! Res greš že domov?", "Imaš prav, še eno rundo!", "Res želim domov..."),
-        ("Čakaj malo... A res že zdaj? 👀", "Tvoji prijatelji bodo rekli, da si copata! Šele pred kratkim smo začeli!", "Bom še ostal!", "Vseeno klic taksija"),
-        ("Tvoja jetra pravijo: Zdrži! 💪", "Zdrži vsaj še en deci cvička ali eno malo točeno pivo. Ne bodi takšen!", "Ok, še eno pivo!", "Ne, res grem domov"),
-        ("Kaj pa Burek pavza?! 🥐", "Zlato pravilo šankanja: Brez vročega bureka se ne gre spat! Pojdi najprej na burek pavzo!", "Grem na burek pavzo!", "Ne, taksi prosim"),
-        ("Legende nikoli ne obupajo! ⭐", "Ali je kdo kdaj postal legenda tako, da je šel spat pred polnočjo? Nikakor!", "Ostajam do konca!", "Jaz nisem legenda, grem spat"),
-        ("Kdo bo pa plačal zadnjo rundo? 💶", "Ravno zdaj bi bila tvoja runda, pa že bežiš? Družba bo zamerila!", "Častim še eno rundo!", "Jaz ne častim, domov grem")
+    let allTaxiSteps = [
+        ("Si res prepričan, da odnehaš?", "Noč v mestu je še mlada, pipe pa še točijo! Res greš že domov?", "Imaš prav, še eno rundo!", "Res želim domov..."),
+        ("Čakaj malo... A res že zdaj?", "Tvoji prijatelji bodo rekli, da si copata! Šele pred kratkim smo začeli!", "Bom še ostal!", "Vseeno klic taksija"),
+        ("Tvoja jetra pravijo: Zdrži!", "Zdrži vsaj še en deci cvička ali eno malo točeno pivo. Ne bodi takšen!", "Ok, še eno pivo!", "Ne, res grem domov"),
+        ("Kaj pa Burek pavza?!", "Zlato pravilo šankanja: Brez vročega bureka se ne gre spat! Pojdi najprej na burek pavzo!", "Grem na burek pavzo!", "Ne, taksi prosim"),
+        ("Legende nikoli ne obupajo!", "Ali je kdo kdaj postal legenda tako, da je šel spat pred polnočjo? Nikakor!", "Ostajam do konca!", "Jaz nisem legenda, grem spat"),
+        ("Pivo brez tebe bo žalostno...", "Natakar ravno odpira nov sod, ti bi pa šel domov? Daj no, še en požirek!", "Še en požirek!", "Ne, taksi zdaj")
     ]
     
     @State private var showSquadSheet: Bool = false
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                Theme.bgDark.edgesIgnoringSafeArea(.all)
+        ZStack {
+            Theme.bgDark.edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 0) {
+                // MATERIAL 3 TOP APP BAR
+                MaterialTopAppBar(title: "Šank Orodja")
                 
                 ScrollView {
-                    VStack(spacing: 16) {
-                        // 1. KARTICA PIVSKA KLAPA (Na vrhu orodij)
-                        squadCardBanner
+                    VStack(alignment: .leading, spacing: 18) {
+                        // HEADER BANNER (Identical to GamesPage.kt)
+                        HStack(spacing: 12) {
+                            ZStack {
+                                Circle()
+                                    .fill(LinearGradient(colors: [Theme.beerGold, Color(hex: 0xD97706)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                    .frame(width: 46, height: 46)
+                                Image(systemName: "wrench.and.screwdriver.fill")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(.black)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Šank Orodja")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundColor(.white)
+                                Text("Zabava, pravila in varna vrnitev domov")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(Theme.textMuted)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
                         
-                        // 2. RULETA ŠANKOV (Naključni lokal)
+                        // 1. KARTICA PIVSKA KLAPA
+                        squadCardSection
+                            .padding(.horizontal, 16)
+                        
+                        // 2. KARTICA RULETA ŠANKOV
                         randomBarSection
+                            .padding(.horizontal, 16)
                         
-                        // 3. BUREK PAVZA (Legendarni nočni kotički)
+                        // 3. KARTICA BUREK PAVZA
                         burekSection
+                            .padding(.horizontal, 16)
                         
                         // 4. KOLO "KDO PLAČA RUNDO?"
                         wheelSection
+                            .padding(.horizontal, 16)
                         
                         // 5. RAZDELI RAČUN (Bill Splitter)
                         billSplitSection
+                            .padding(.horizontal, 16)
                         
-                        // 6. GUMB ZA TAKSI Z NAKLJUČNIM PREPRIČEVANJEM
+                        // 6. GUMB ZA TAKSI
                         taxiSection
+                            .padding(.horizontal, 16)
                     }
-                    .padding(16)
-                    .padding(.bottom, 60)
+                    .padding(.bottom, 80) // Prostor za BottomNavBar
                 }
             }
-            .navigationTitle("Orodja")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
-                GlobalSyncManager.shared.reportScreen("Pivska orodja")
-            }
-            .sheet(isPresented: $showSquadSheet) {
-                SquadView()
-            }
-            .sheet(isPresented: $showFinalTaxiModal) {
-                taxiDialerModal
-            }
         }
-        .navigationViewStyle(.stack)
+        .sheet(isPresented: $showSquadSheet) {
+            SquadView()
+        }
+        .sheet(isPresented: $showFinalTaxiModal) {
+            taxiModalView
+        }
+        .alert(isPresented: $isTaxiConvincing) {
+            let step = allTaxiSteps[currentTaxiConvinceIndex % allTaxiSteps.count]
+            return Alert(
+                title: Text(step.0),
+                message: Text(step.1),
+                primaryButton: .default(Text(step.2)) {
+                    isTaxiConvincing = false
+                },
+                secondaryButton: .destructive(Text(step.3)) {
+                    if currentTaxiConvinceIndex + 1 < maxTaxiSteps {
+                        currentTaxiConvinceIndex += 1
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            isTaxiConvincing = true
+                        }
+                    } else {
+                        showFinalTaxiModal = true
+                    }
+                }
+            )
+        }
     }
     
     // MARK: - 1. Pivska Klapa Kartica
-    private var squadCardBanner: some View {
+    private var squadCardSection: some View {
         Button(action: { showSquadSheet = true }) {
             HStack(spacing: 14) {
                 ZStack {
-                    Circle()
-                        .fill(Theme.beerGold.opacity(0.2))
-                        .frame(width: 48, height: 48)
-                    Text("👥")
-                        .font(.title2)
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Theme.primaryContainerDark)
+                        .frame(width: 44, height: 44)
+                    Image(systemName: "person.3.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(Theme.beerGold)
                 }
                 
                 VStack(alignment: .leading, spacing: 3) {
                     HStack {
                         Text(squad.activeRoom != nil ? "Pivska Klapa: \(squad.activeRoom!.code)" : "Pivska Klapa (Skupina)")
-                            .font(.headline)
-                            .fontWeight(.bold)
+                            .font(.system(size: 15, weight: .bold))
                             .foregroundColor(.white)
                         
                         if squad.activeRoom != nil {
-                            Circle()
-                                .fill(Theme.drajvGreen)
-                                .frame(width: 8, height: 8)
+                            Circle().fill(Theme.drajvGreen).frame(width: 8, height: 8)
                         }
                     }
                     
                     Text(squad.activeRoom != nil ? "\(squad.members.count) prijateljev v živo • Klikni za klepet" : "Vstopi v sobo, klepetaj v živo in štej runde!")
-                        .font(.caption)
-                        .foregroundColor(.appMuted)
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.textMuted)
                 }
                 
                 Spacer()
                 
                 Image(systemName: "chevron.right")
-                    .foregroundColor(.beerGold)
+                    .foregroundColor(Theme.beerGold)
             }
             .padding(14)
             .background(Theme.cardDark)
             .cornerRadius(16)
             .overlay(
                 RoundedRectangle(cornerRadius: 16)
-                    .stroke(squad.activeRoom != nil ? Theme.beerGold : Color.clear, lineWidth: 1.5)
+                    .stroke(squad.activeRoom != nil ? Theme.beerGold : Theme.darkBorder, lineWidth: 1)
             )
         }
     }
     
-    // MARK: - 2. Ruleta šankov (Naključni lokal)
+    // MARK: - 2. Ruleta Šankov
     private var randomBarSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("🎲 Ruleta Šankov")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                Spacer()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Theme.primaryContainerDark)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "dice.fill")
+                        .foregroundColor(Theme.beerGold)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Ruleta Šankov")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Ne veš, kam naprej? Naj odloči usoda!")
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.textMuted)
+                }
             }
             
             if let bar = randomBar {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     Text(bar.name)
-                        .font(.title3)
-                        .fontWeight(.bold)
-                        .foregroundColor(.beerGold)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(Theme.beerGold)
                     Text(bar.address)
-                        .font(.caption)
-                        .foregroundColor(.appMuted)
-                    
-                    HStack {
-                        Text(bar.statusBadge.text)
-                            .font(.caption2)
-                            .foregroundColor(bar.statusBadge.isGreen ? Theme.drajvGreen : Theme.drajvRed)
-                        Text("•  \(bar.formattedDistance(from: locationManager.location))")
-                            .font(.caption)
-                            .foregroundColor(.white)
-                    }
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.textMuted)
                     
                     Button(action: { bridge.navigateTo(lokal: bar) }) {
                         HStack {
                             Image(systemName: "figure.walk")
-                            Text("Navigiraj peš")
-                                .fontWeight(.bold)
+                            Text("Vodi me do tja!")
                         }
-                        .font(.caption)
+                        .font(.system(size: 13, weight: .bold))
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color(red: 46/255, green: 125/255, blue: 50/255))
+                        .frame(height: 38)
+                        .background(Theme.drajvGreen)
                         .foregroundColor(.white)
-                        .cornerRadius(10)
+                        .cornerRadius(8)
                     }
-                    .padding(.top, 4)
                 }
                 .padding(12)
                 .background(Theme.surfaceDark)
-                .cornerRadius(12)
+                .cornerRadius(10)
             }
             
-            Button(action: spinRandomBar) {
+            Button(action: rollRandomBar) {
                 HStack {
                     Image(systemName: "dice.fill")
-                    Text("Izžrebaj naključni šank!")
+                    Text("Zavrti ruleto")
                         .fontWeight(.bold)
                 }
+                .font(.system(size: 14))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Theme.beerGold)
+                .frame(height: 42)
+                .background(LinearGradient(colors: [Theme.beerGold, Color(hex: 0xD97706)], startPoint: .leading, endPoint: .trailing))
                 .foregroundColor(.black)
-                .cornerRadius(12)
+                .cornerRadius(10)
             }
         }
         .padding(14)
         .background(Theme.cardDark)
         .cornerRadius(16)
-    }
-    
-    private func spinRandomBar() {
-        isRollingRandom = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            self.randomBar = self.burekSpots.randomElement()
-            self.isRollingRandom = false
-        }
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.darkBorder, lineWidth: 1))
     }
     
     // MARK: - 3. Burek Pavza
     private var burekSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                HStack(spacing: 6) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Theme.primaryContainerDark)
+                        .frame(width: 36, height: 36)
                     Text("🥐")
-                        .font(.title2)
-                    Text("Burek Pavza (Nočne pekarne)")
-                        .font(.headline)
-                        .fontWeight(.bold)
-                        .foregroundColor(.white)
+                        .font(.system(size: 18))
                 }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Burek Pavza")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Rešitev za nočno lakoto z delovnimi časi")
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.textMuted)
+                }
+                
                 Spacer()
                 
                 Button(action: { onlyOpenBurek.toggle() }) {
-                    Text(onlyOpenBurek ? "🟢 Samo odprto" : "Vsi kotički")
-                        .font(.caption2)
-                        .fontWeight(.bold)
+                    Text(onlyOpenBurek ? "Odprto zdaj" : "Vse točke")
+                        .font(.system(size: 11, weight: .bold))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
                         .background(onlyOpenBurek ? Theme.drajvGreen : Theme.surfaceDark)
-                        .foregroundColor(.white)
+                        .foregroundColor(onlyOpenBurek ? .black : Theme.textMuted)
                         .cornerRadius(8)
                 }
             }
             
-            let filtered = onlyOpenBurek ? burekSpots.filter { $0.isOpenNow } : burekSpots
-            let displayed = showAllBureks ? filtered : Array(filtered.prefix(4))
+            let filteredBureks = onlyOpenBurek ? burekSpots.filter { $0.isOpenNow } : burekSpots
+            let displayed = showAllBureks ? filteredBureks : Array(filteredBureks.prefix(3))
             
             VStack(spacing: 8) {
                 ForEach(displayed) { spot in
                     HStack {
-                        VStack(alignment: .leading, spacing: 2) {
+                        VStack(alignment: .leading, spacing: 3) {
                             Text(spot.name)
-                                .font(.subheadline)
-                                .fontWeight(.bold)
+                                .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(.white)
-                            Text(spot.address)
-                                .font(.system(size: 11))
-                                .foregroundColor(.appMuted)
-                                .lineLimit(1)
                             
                             HStack(spacing: 6) {
                                 Text(spot.statusBadge.text)
-                                    .font(.system(size: 10))
-                                    .fontWeight(.bold)
+                                    .font(.system(size: 11, weight: .bold))
                                     .foregroundColor(spot.statusBadge.isGreen ? Theme.drajvGreen : Theme.drajvRed)
                                 
-                                Text("• \(spot.formattedDistance(from: locationManager.location)) (~ \(spot.walkingMinutes(from: locationManager.location)) min)")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.beerGold)
+                                Text("• \(spot.formattedDistance(from: locationManager.location))")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Theme.beerGold)
                             }
                         }
                         
@@ -282,330 +321,397 @@ struct ToolsView: View {
                         
                         Button(action: { bridge.navigateTo(lokal: spot) }) {
                             Image(systemName: "figure.walk")
-                                .font(.subheadline)
+                                .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color(red: 46/255, green: 125/255, blue: 50/255))
+                                .frame(width: 36, height: 36)
+                                .background(Theme.drajvGreen)
                                 .clipShape(Circle())
                         }
                     }
                     .padding(10)
                     .background(Theme.surfaceDark)
-                    .cornerRadius(12)
+                    .cornerRadius(10)
                 }
             }
             
-            if filtered.count > 4 {
+            if filteredBureks.count > 3 {
                 Button(action: { showAllBureks.toggle() }) {
-                    Text(showAllBureks ? "Prikaži manj" : "Prikaži vseh \(filtered.count) lokacij bureka")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.beerGold)
+                    Text(showAllBureks ? "Pokaži manj" : "Prikaži vseh \(filteredBureks.count) burek točk")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Theme.beerGold)
                         .frame(maxWidth: .infinity)
-                        .padding(.vertical, 6)
+                        .padding(.vertical, 4)
                 }
             }
         }
         .padding(14)
         .background(Theme.cardDark)
         .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.darkBorder, lineWidth: 1))
     }
     
     // MARK: - 4. Kolo "Kdo plača rundo?"
     private var wheelSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("🎡 Kdo plača rundo?")
-                    .font(.headline)
-                    .fontWeight(.bold)
-                    .foregroundColor(.white)
-                Spacer()
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Theme.primaryContainerDark)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "circle.circle.fill")
+                        .foregroundColor(Theme.beerGold)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Kolo: Kdo plača rundo?")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Pravičen žreb naslednjega plačnika piva")
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.textMuted)
+                }
             }
             
-            // Seznam imen
+            // Prijatelji čipi
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(friendsList, id: \.self) { friend in
+                HStack(spacing: 6) {
+                    ForEach(friendsList, id: \.self) { name in
                         HStack(spacing: 4) {
-                            Text(friend)
-                                .font(.caption)
-                                .foregroundColor(.white)
-                            Button(action: { friendsList.removeAll { $0 == friend } }) {
-                                Image(systemName: "xmark")
-                                    .font(.system(size: 8))
-                                    .foregroundColor(.gray)
+                            Text(name)
+                                .font(.system(size: 12, weight: .medium))
+                            if friendsList.count > 2 {
+                                Button(action: { friendsList.removeAll { $0 == name } }) {
+                                    Image(systemName: "xmark")
+                                        .font(.system(size: 9))
+                                }
                             }
                         }
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 5)
+                        .padding(.vertical, 6)
                         .background(Theme.surfaceDark)
-                        .cornerRadius(10)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
                     }
                 }
             }
             
+            // Vnos novega imena
             HStack {
                 TextField("Dodaj prijatelja...", text: $newFriendInput)
-                    .font(.caption)
+                    .font(.system(size: 13))
+                    .foregroundColor(.white)
                     .padding(8)
                     .background(Theme.surfaceDark)
                     .cornerRadius(8)
-                    .foregroundColor(.white)
                 
                 Button(action: {
-                    let t = newFriendInput.trimmingCharacters(in: .whitespaces)
-                    if !t.isEmpty && !friendsList.contains(t) {
-                        friendsList.append(t)
+                    if !newFriendInput.trimmingCharacters(in: .whitespaces).isEmpty {
+                        friendsList.append(newFriendInput.trimmingCharacters(in: .whitespaces))
                         newFriendInput = ""
                     }
                 }) {
                     Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .bold))
                         .foregroundColor(.black)
-                        .padding(8)
+                        .frame(width: 34, height: 34)
                         .background(Theme.beerGold)
                         .cornerRadius(8)
                 }
             }
             
+            // Kolo z iglo
+            ZStack {
+                Circle()
+                    .stroke(Theme.beerGold, lineWidth: 6)
+                    .frame(width: 140, height: 140)
+                    .rotationEffect(.degrees(wheelAngle))
+                    .overlay(
+                        VStack {
+                            Image(systemName: "arrowtriangle.down.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(Theme.drajvRed)
+                                .offset(y: -75)
+                        }
+                    )
+                
+                Text("🍺")
+                    .font(.system(size: 40))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            
             if let payer = selectedPayer {
-                HStack {
-                    Spacer()
-                    VStack(spacing: 4) {
-                        Text("Rundo časti:")
-                            .font(.caption)
-                            .foregroundColor(.appMuted)
-                        Text("🍺 \(payer)!")
-                            .font(.title2)
-                            .fontWeight(.black)
-                            .foregroundColor(.beerGold)
+                VStack(spacing: 4) {
+                    Text("Rundo časti: \(payer)! 🍻")
+                        .font(.system(size: 17, weight: .black))
+                        .foregroundColor(Theme.beerGold)
+                    if let quote = funPayerQuote {
+                        Text(quote)
+                            .font(.system(size: 12))
+                            .foregroundColor(Theme.textMuted)
+                            .italic()
                     }
-                    Spacer()
                 }
+                .frame(maxWidth: .infinity)
                 .padding(10)
                 .background(Theme.surfaceDark)
-                .cornerRadius(12)
+                .cornerRadius(10)
             }
             
             Button(action: spinWheel) {
-                HStack {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                    Text("Zavrti kolo za rundo!")
-                        .fontWeight(.bold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Theme.beerGold)
-                .foregroundColor(.black)
-                .cornerRadius(12)
+                Text(isSpinningWheel ? "Vrtim kolo..." : "Zavrti kolo za rundo")
+                    .font(.system(size: 14, weight: .bold))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 42)
+                    .background(Theme.beerGold)
+                    .foregroundColor(.black)
+                    .cornerRadius(10)
             }
+            .disabled(isSpinningWheel || friendsList.isEmpty)
         }
         .padding(14)
         .background(Theme.cardDark)
         .cornerRadius(16)
-    }
-    
-    private func spinWheel() {
-        guard !friendsList.isEmpty, !isSpinningWheel else { return }
-        isSpinningWheel = true
-        selectedPayer = "Vrtim..."
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            self.selectedPayer = self.friendsList.randomElement()
-            self.isSpinningWheel = false
-        }
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.darkBorder, lineWidth: 1))
     }
     
     // MARK: - 5. Razdeli Račun (Bill Splitter)
     private var billSplitSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("💶 Razdeli Račun")
-                .font(.headline)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Theme.primaryContainerDark)
+                        .frame(width: 36, height: 36)
+                    Image(systemName: "banknote.fill")
+                        .foregroundColor(Theme.beerGold)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Razdeli Račun")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.white)
+                    Text("Kalkulator za delitev zneska z napitnino")
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.textMuted)
+                }
+            }
             
             HStack {
-                Text("Skupni znesek:")
-                    .font(.subheadline)
-                    .foregroundColor(.appMuted)
+                Text("Skupni znesek (€):")
+                    .font(.system(size: 13))
+                    .foregroundColor(Theme.textMuted)
                 Spacer()
-                TextField("€", text: $totalBillAmount)
+                TextField("Znesek", text: $totalBillAmount)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
-                    .font(.headline)
                     .foregroundColor(.white)
+                    .font(.system(size: 15, weight: .bold))
                     .frame(width: 100)
                     .padding(6)
                     .background(Theme.surfaceDark)
-                    .cornerRadius(8)
+                    .cornerRadius(6)
             }
             
             HStack {
-                Text("Število oseb: \(peopleCount)")
-                    .font(.subheadline)
-                    .foregroundColor(.appMuted)
+                Text("Število oseb:")
+                    .font(.system(size: 13))
+                    .foregroundColor(Theme.textMuted)
                 Spacer()
-                Stepper("", value: $peopleCount, in: 1...20)
-                    .labelsHidden()
+                HStack(spacing: 12) {
+                    Button(action: { if peopleCount > 1 { peopleCount -= 1 } }) {
+                        Text("-").font(.title3).foregroundColor(.white).frame(width: 30, height: 30).background(Theme.surfaceDark).cornerRadius(6)
+                    }
+                    Text("\(peopleCount)")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.white)
+                    Button(action: { peopleCount += 1 }) {
+                        Text("+").font(.title3).foregroundColor(.white).frame(width: 30, height: 30).background(Theme.surfaceDark).cornerRadius(6)
+                    }
+                }
             }
             
-            // Napitnina
-            HStack {
+            HStack(spacing: 8) {
                 Text("Napitnina:")
-                    .font(.caption)
-                    .foregroundColor(.appMuted)
-                Spacer()
-                HStack(spacing: 6) {
-                    ForEach(0..<tipOptions.count, id: \.self) { idx in
-                        Button(action: { selectedTipIndex = idx }) {
-                            Text("\(Int(tipOptions[idx] * 100))%")
-                                .font(.caption2)
-                                .fontWeight(.bold)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(selectedTipIndex == idx ? Theme.beerGold : Theme.surfaceDark)
-                                .foregroundColor(selectedTipIndex == idx ? .black : .white)
-                                .cornerRadius(6)
-                        }
+                    .font(.system(size: 12))
+                    .foregroundColor(Theme.textMuted)
+                ForEach(0..<tipOptions.count, id: \.self) { idx in
+                    Button(action: { selectedTipIndex = idx }) {
+                        Text("\(Int(tipOptions[idx] * 100))%")
+                            .font(.system(size: 11, weight: selectedTipIndex == idx ? .bold : .normal))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(selectedTipIndex == idx ? Theme.beerGold : Theme.surfaceDark)
+                            .foregroundColor(selectedTipIndex == idx ? .black : .white)
+                            .cornerRadius(6)
                     }
                 }
             }
             
             // Izračun na osebo
-            let total = (Double(totalBillAmount.replacingOccurrences(of: ",", with: ".")) ?? 0.0) * (1.0 + tipOptions[selectedTipIndex])
-            let perPerson = total / Double(max(1, peopleCount))
+            let total = Double(totalBillAmount.replacingOccurrences(of: ",", with: ".")) ?? 0.0
+            let totalWithTip = total * (1.0 + tipOptions[selectedTipIndex])
+            let perPerson = peopleCount > 0 ? totalWithTip / Double(peopleCount) : 0.0
             
             HStack {
-                Text("Vsak plača:")
-                    .font(.headline)
+                Text("Znesek na osebo:")
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white)
                 Spacer()
                 Text(String(format: "%.2f €", perPerson))
-                    .font(.title2)
-                    .fontWeight(.black)
-                    .foregroundColor(.beerGold)
+                    .font(.system(size: 20, weight: .black))
+                    .foregroundColor(Theme.beerGold)
             }
-            .padding(10)
+            .padding(12)
             .background(Theme.surfaceDark)
             .cornerRadius(10)
         }
         .padding(14)
         .background(Theme.cardDark)
         .cornerRadius(16)
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.darkBorder, lineWidth: 1))
     }
     
     // MARK: - 6. Taksi z naključnim prepričevanjem
     private var taxiSection: some View {
-        VStack(spacing: 10) {
-            Button(action: startTaxiFlow) {
-                HStack {
+        Button(action: startTaxiConvincing) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Theme.drajvRed.opacity(0.2))
+                        .frame(width: 44, height: 44)
                     Image(systemName: "car.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(Theme.drajvRed)
+                }
+                
+                VStack(alignment: .leading, spacing: 2) {
                     Text("Končal sem / Pokliči taksi 🚕")
-                        .fontWeight(.bold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Theme.drajvRed)
-                .foregroundColor(.white)
-                .cornerRadius(14)
-            }
-            
-            if isTaxiConvincing {
-                let step = taxiSteps[min(currentTaxiConvinceIndex, taxiSteps.count - 1)]
-                VStack(spacing: 12) {
-                    Text(step.0)
-                        .font(.headline)
-                        .fontWeight(.bold)
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundColor(.white)
-                    
-                    Text(step.1)
-                        .font(.subheadline)
-                        .foregroundColor(.appMuted)
-                        .multilineTextAlignment(.center)
-                    
-                    Button(action: { isTaxiConvincing = false }) {
-                        Text(step.2)
-                            .fontWeight(.bold)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(Theme.beerGold)
-                            .foregroundColor(.black)
-                            .cornerRadius(10)
-                    }
-                    
-                    Button(action: nextTaxiStep) {
-                        Text(step.3)
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
+                    Text("Šaljivo prepričevanje pred varno vrnitvijo domov")
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.textMuted)
                 }
-                .padding(14)
-                .background(Theme.surfaceDark)
-                .cornerRadius(14)
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .foregroundColor(Theme.drajvRed)
             }
+            .padding(14)
+            .background(Theme.cardDark)
+            .cornerRadius(16)
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.drajvRed.opacity(0.4), lineWidth: 1))
         }
-        .padding(14)
-        .background(Theme.cardDark)
-        .cornerRadius(16)
     }
     
-    private func startTaxiFlow() {
-        maxTaxiSteps = Int.random(in: 3...5)
+    private var taxiModalView: some View {
+        ZStack {
+            Theme.bgDark.edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 20) {
+                Image(systemName: "car.circle.fill")
+                    .font(.system(size: 64))
+                    .foregroundColor(Theme.beerGold)
+                
+                VStack(spacing: 6) {
+                    Text("Čas je za domov... 🚕")
+                        .font(.title2)
+                        .fontWeight(.black)
+                        .foregroundColor(.white)
+                    Text("Ponosno si zdržal večer. Tukaj so številke za varen prevoz:")
+                        .font(.caption)
+                        .foregroundColor(Theme.textMuted)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 24)
+                }
+                
+                VStack(spacing: 12) {
+                    Link(destination: URL(string: "tel:+38615888888")!) {
+                        HStack {
+                            Image(systemName: "phone.fill")
+                            Text("Taxi Metro: 01 588 88 88")
+                                .fontWeight(.bold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Theme.beerGold)
+                        .foregroundColor(.black)
+                        .cornerRadius(12)
+                    }
+                    
+                    Link(destination: URL(string: "tel:+38615112345")!) {
+                        HStack {
+                            Image(systemName: "phone.fill")
+                            Text("Taxi Laguna: 01 511 23 45")
+                                .fontWeight(.bold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Theme.surfaceVariantDark)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal, 24)
+                
+                Button(action: { showFinalTaxiModal = false }) {
+                    Text("Prekliči, še malo ostanem...")
+                        .font(.caption)
+                        .foregroundColor(Theme.textMuted)
+                }
+                .padding(.top, 10)
+            }
+            .padding(20)
+        }
+    }
+    
+    // MARK: - Pomožne funkcije
+    private func rollRandomBar() {
+        let userPos = locationManager.location ?? LocationManager.defaultCoordinate
+        Task {
+            do {
+                let fetched = try await network.fetchNearbyBars(lat: userPos.latitude, lon: userPos.longitude, radius: 2000, limit: 30)
+                DispatchQueue.main.async {
+                    if let pick = fetched.randomElement() {
+                        self.randomBar = pick
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    self.randomBar = self.burekSpots.randomElement()
+                }
+            }
+        }
+    }
+    
+    private func spinWheel() {
+        isSpinningWheel = true
+        selectedPayer = nil
+        let turns = Double.random(in: 4...8) * 360.0
+        let targetAngle = wheelAngle + turns
+        
+        withAnimation(.easeOut(duration: 2.5)) {
+            wheelAngle = targetAngle
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            self.isSpinningWheel = false
+            self.selectedPayer = self.friendsList.randomElement() ?? "Ti"
+            let quotes = [
+                "Denar je, da se zapravi!",
+                "Legenda večera časti brez pomisleka!",
+                "Tvoja jetra morda trpijo, ampak tvoja denarnica bo še bolj!",
+                "Runda je sveta stvar!"
+            ]
+            self.funPayerQuote = quotes.randomElement()
+        }
+    }
+    
+    private func startTaxiConvincing() {
+        maxTaxiSteps = Int.random(in: 3...6)
         currentTaxiConvinceIndex = 0
         isTaxiConvincing = true
-    }
-    
-    private func nextTaxiStep() {
-        if currentTaxiConvinceIndex + 1 >= maxTaxiSteps {
-            isTaxiConvincing = false
-            showFinalTaxiModal = true
-        } else {
-            currentTaxiConvinceIndex += 1
-        }
-    }
-    
-    private var taxiDialerModal: some View {
-        VStack(spacing: 18) {
-            Text("Čas je za domov... 🚕")
-                .font(.title2)
-                .fontWeight(.bold)
-                .foregroundColor(.white)
-                .padding(.top, 24)
-            
-            Text("Varno se vrni domov. Izberi ponudnika taksija za neposreden klic:")
-                .font(.subheadline)
-                .foregroundColor(.appMuted)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-            
-            VStack(spacing: 12) {
-                taxiCallButton(name: "Taxi Metro (080 11 90)", number: "0801190")
-                taxiCallButton(name: "Taxi Laguna (080 11 17)", number: "0801117")
-                taxiCallButton(name: "Taxi Cammeo (01 777 12 12)", number: "017771212")
-            }
-            .padding(.horizontal, 24)
-            
-            Spacer()
-            
-            Button("Prekliči, še malo ostanem...") {
-                showFinalTaxiModal = false
-            }
-            .foregroundColor(.beerGold)
-            .padding(.bottom, 24)
-        }
-        .background(Theme.bgDark.edgesIgnoringSafeArea(.all))
-    }
-    
-    private func taxiCallButton(name: String, number: String) -> some View {
-        Link(destination: URL(string: "tel:\(number)")!) {
-            HStack {
-                Image(systemName: "phone.fill")
-                Text(name)
-                    .fontWeight(.bold)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
-            .background(Theme.surfaceDark)
-            .foregroundColor(.white)
-            .cornerRadius(12)
-        }
     }
 }

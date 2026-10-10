@@ -71,7 +71,7 @@ struct MapTabView: View {
                         }
                     }
                     .padding(.trailing, 16)
-                    .padding(.bottom, (selectedBar != nil || activeRoute != nil) ? 10 : 80)
+                    .padding(.bottom, (selectedBar != nil || activeRoute != nil) ? 10 : 85)
                 }
                 
                 // Spodnji Navigation Status HUD (med navigacijo)
@@ -79,13 +79,13 @@ struct MapTabView: View {
                     navigationStatusBar(route: route, target: target)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .padding(.horizontal, 14)
-                        .padding(.bottom, 65)
+                        .padding(.bottom, 78)
                 } else if let bar = selectedBar {
                     // Spodnja kartica lokala (pred začetkom navigacije)
                     barDetailSheet(bar: bar)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                         .padding(.horizontal, 14)
-                        .padding(.bottom, 65)
+                        .padding(.bottom, 78)
                 }
             }
             

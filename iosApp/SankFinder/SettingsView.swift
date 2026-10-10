@@ -3,7 +3,6 @@ import CoreLocation
 import AVFoundation
 
 struct SettingsView: View {
-    // Shranjene nastavitve v UserDefaults
     @AppStorage("soundAlerts") private var soundAlerts: Bool = true
     @AppStorage("pushNotifications") private var pushNotifications: Bool = true
     @AppStorage("safeTripAlert") private var safeTripAlert: Bool = true
@@ -12,149 +11,141 @@ struct SettingsView: View {
     @AppStorage("defaultRadiusKm") private var selectedRadiusKm: Int = 2
     @AppStorage("lokalLimit") private var selectedLokalLimit: Int = 25
     
-    // Diagnostika
     @State private var isLocationAllowed: Bool = true
     @State private var isCameraAllowed: Bool = true
     @State private var isApiTesting: Bool = false
     @State private var apiStatusText: String = "Povezava deluje! Strežnik lokalov pripravljen."
     @State private var isApiConnected: Bool = true
     
-    // Modalna okna
     @State private var showAboutModal: Bool = false
     @State private var showCustomLimitModal: Bool = false
     @State private var customLimitInput: String = ""
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                Theme.bgDark.edgesIgnoringSafeArea(.all)
+        ZStack {
+            Theme.bgDark.edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 0) {
+                // MATERIAL 3 TOP APP BAR
+                MaterialTopAppBar(title: "Nastavitve")
                 
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 20) {
-                        
-                        // 1. TOP ITEM: Zvočna opozorila (DRAJV slog)
+                    VStack(alignment: .leading, spacing: 18) {
+                        // 1. ZVOČNA OPOZORILA (DRAJV rdeče stikalo)
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text("Zvočna opozorila")
-                                    .font(.headline)
-                                    .fontWeight(.bold)
+                                    .font(.system(size: 16, weight: .bold))
                                     .foregroundColor(.white)
                                 Text("Opozorilo ob povišani stopnji alkohola")
-                                    .font(.caption)
-                                    .foregroundColor(.appMuted)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(Theme.textMuted)
                             }
                             Spacer()
                             Toggle("", isOn: $soundAlerts)
                                 .labelsHidden()
                                 .tint(Theme.drajvRed)
                         }
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
                         
-                        Divider().background(Color.white.opacity(0.1))
+                        Rectangle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(height: 0.5)
+                            .padding(.horizontal, 16)
                         
-                        // 2. ŠANKFINDER DIAGNOSTIKA – DOVOLJENJA APLIKACIJE
+                        // 2. ŠANKFINDER DIAGNOSTIKA – DOVOLJENJA APLIKACIJE (DRAJV slog)
                         VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text("ŠANKFINDER diagnostika – dovoljenja")
-                                        .font(.subheadline)
-                                        .fontWeight(.bold)
+                                        .font(.system(size: 15, weight: .bold))
                                         .foregroundColor(.white)
                                     Text("Za nemoteno delovanje poskrbite, da so vsa dovoljenja odobrena.")
-                                        .font(.caption2)
-                                        .foregroundColor(.appMuted)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(Theme.textMuted)
                                 }
                                 Spacer()
                                 Button(action: refreshDiagnostics) {
                                     Image(systemName: "arrow.clockwise")
-                                        .foregroundColor(.beerGold)
+                                        .foregroundColor(Theme.beerGold)
                                         .padding(6)
-                                        .background(Theme.cardDark)
+                                        .background(Theme.surfaceDark)
                                         .clipShape(Circle())
                                 }
                             }
                             
-                            // Diagnostična kartica (DRAJV stil s kljukicami)
+                            // Diagnostična kartica
                             VStack(spacing: 0) {
-                                diagnosticRow(
-                                    icon: "location.fill",
+                                diagnosticItem(
                                     title: "Lokacija",
                                     subtitle: isLocationAllowed ? "Dostop do lokacije naprave omogočen." : "Lokacija ni omogočena. Preveri v nastavitvah.",
-                                    isOk: isLocationAllowed
+                                    isApproved: isLocationAllowed
                                 )
                                 
-                                Divider().background(Color.white.opacity(0.08)).padding(.leading, 42)
+                                Divider().background(Color.white.opacity(0.08)).padding(.leading, 14)
                                 
-                                diagnosticRow(
-                                    icon: "location.north.circle.fill",
+                                diagnosticItem(
                                     title: "Mobilni senzorji & GPS",
-                                    subtitle: "Dostop do visoke natančnosti GPS & kompasa je omogočen.",
-                                    isOk: true
+                                    subtitle: "Dostop do visoke natančnosti GPS & azimuta je omogočen.",
+                                    isApproved: true
                                 )
                                 
-                                Divider().background(Color.white.opacity(0.08)).padding(.leading, 42)
+                                Divider().background(Color.white.opacity(0.08)).padding(.leading, 14)
                                 
-                                diagnosticRow(
-                                    icon: "camera.fill",
+                                diagnosticItem(
                                     title: "Kamera (Skeniranje računov)",
                                     subtitle: isCameraAllowed ? "Dostop do kamere za branje računov in QR kod omogočen." : "Kamera ni odobrena.",
-                                    isOk: isCameraAllowed
+                                    isApproved: isCameraAllowed
                                 )
                                 
-                                Divider().background(Color.white.opacity(0.08)).padding(.leading, 42)
+                                Divider().background(Color.white.opacity(0.08)).padding(.leading, 14)
                                 
-                                diagnosticRow(
-                                    icon: "checkmark.seal.fill",
+                                diagnosticItem(
                                     title: "Različica aplikacije",
                                     subtitle: "Aplikacija je posodobljena. Različica 1.2.0 (Build 36).",
-                                    isOk: true
+                                    isApproved: true
                                 )
                                 
-                                Divider().background(Color.white.opacity(0.08)).padding(.leading, 42)
+                                Divider().background(Color.white.opacity(0.08)).padding(.leading, 14)
                                 
                                 HStack(spacing: 12) {
-                                    Image(systemName: "network")
-                                        .font(.headline)
-                                        .foregroundColor(.beerGold)
-                                        .frame(width: 24)
-                                    
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text("Povezava s strežnikom lokalov")
-                                            .font(.caption)
-                                            .fontWeight(.bold)
+                                            .font(.system(size: 14, weight: .bold))
                                             .foregroundColor(.white)
                                         Text(apiStatusText)
-                                            .font(.caption2)
+                                            .font(.system(size: 12))
                                             .foregroundColor(isApiConnected ? Theme.drajvGreen : Theme.drajvRed)
                                     }
-                                    
                                     Spacer()
-                                    
                                     if isApiTesting {
-                                        ProgressView()
-                                            .progressViewStyle(CircularProgressViewStyle(tint: .beerGold))
-                                            .scaleEffect(0.8)
+                                        ProgressView().progressViewStyle(CircularProgressViewStyle(tint: Theme.beerGold))
                                     } else {
                                         Button(action: testNetwork) {
                                             Image(systemName: "arrow.clockwise")
-                                                .font(.caption)
+                                                .font(.system(size: 14))
                                                 .foregroundColor(Theme.drajvRed)
                                         }
                                     }
                                 }
                                 .padding(12)
                             }
-                            .background(Theme.cardDark)
+                            .background(Theme.surfaceVariantDark.opacity(0.45))
                             .cornerRadius(14)
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.darkBorder, lineWidth: 1))
                         }
+                        .padding(.horizontal, 16)
                         
-                        Divider().background(Color.white.opacity(0.1))
+                        Rectangle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(height: 0.5)
+                            .padding(.horizontal, 16)
                         
                         // 3. DODATNE MOŽNOSTI
-                        VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 14) {
                             Text("Dodatne možnosti")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
+                                .font(.system(size: 15, weight: .bold))
                                 .foregroundColor(.white)
                             
                             toggleRow(title: "Potisna obvestila", subtitle: "Obvestila o varni poti in spremljanje obiska na zaklenjenem zaslonu", isOn: $pushNotifications)
@@ -165,120 +156,113 @@ struct SettingsView: View {
                             Divider().background(Color.white.opacity(0.08))
                             toggleRow(title: "Nočni način šanka (Temna tema)", subtitle: "Privlačen temen videz za večerne izhode", isOn: $darkTheme)
                         }
+                        .padding(.horizontal, 16)
                         
-                        Divider().background(Color.white.opacity(0.1))
+                        Rectangle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(height: 0.5)
+                            .padding(.horizontal, 16)
                         
                         // 4. RADIJ ISKANJA LOKALOV
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Radij iskanja lokalov: \(selectedRadiusKm) km")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
+                                .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(.white)
                             Text("Določa območje za iskanje šankov okoli vaše lokacije (\(selectedRadiusKm * 1000) metrov)")
-                                .font(.caption2)
-                                .foregroundColor(.appMuted)
+                                .font(.system(size: 12))
+                                .foregroundColor(Theme.textMuted)
                             
                             HStack(spacing: 8) {
                                 ForEach([1, 2, 3, 5], id: \.self) { km in
-                                    chipButton(title: "\(km) km", isSelected: selectedRadiusKm == km) {
+                                    MaterialFilterChip(title: "\(km) km", isSelected: selectedRadiusKm == km) {
                                         selectedRadiusKm = km
                                     }
                                 }
                             }
                         }
+                        .padding(.horizontal, 16)
                         
-                        Divider().background(Color.white.opacity(0.1))
+                        Rectangle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(height: 0.5)
+                            .padding(.horizontal, 16)
                         
                         // 5. ŠTEVILO PRIKAZANIH LOKALOV (LIMIT)
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Število prikazanih lokalov: \(selectedLokalLimit)")
-                                .font(.subheadline)
-                                .fontWeight(.bold)
+                                .font(.system(size: 14, weight: .bold))
                                 .foregroundColor(.white)
                             Text("Določa, koliko najbližjih šankov se naloži in prikaže na zemljevidu ter seznamu")
-                                .font(.caption2)
-                                .foregroundColor(.appMuted)
+                                .font(.system(size: 12))
+                                .foregroundColor(Theme.textMuted)
                             
                             HStack(spacing: 8) {
                                 ForEach([10, 25, 50], id: \.self) { count in
-                                    chipButton(title: "\(count)", isSelected: selectedLokalLimit == count) {
+                                    MaterialFilterChip(title: "\(count)", isSelected: selectedLokalLimit == count) {
                                         selectedLokalLimit = count
                                     }
                                 }
                                 
                                 let isCustom = ![10, 25, 50].contains(selectedLokalLimit)
-                                chipButton(title: isCustom ? "Po meri (\(selectedLokalLimit))" : "Po meri...", isSelected: isCustom) {
+                                MaterialFilterChip(title: isCustom ? "Po meri (\(selectedLokalLimit))" : "Po meri...", isSelected: isCustom) {
                                     customLimitInput = "\(selectedLokalLimit)"
                                     showCustomLimitModal = true
                                 }
                             }
                         }
-                        
-                        Divider().background(Color.white.opacity(0.1))
+                        .padding(.horizontal, 16)
                         
                         // 6. GUMB O APLIKACIJI
                         Button(action: { showAboutModal = true }) {
                             HStack {
                                 Image(systemName: "info.circle.fill")
-                                    .foregroundColor(.beerGold)
+                                    .foregroundColor(Theme.beerGold)
                                 Text("O aplikaciji ŠankFinder 🍻")
-                                    .font(.subheadline)
-                                    .fontWeight(.bold)
+                                    .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.white)
                                 Spacer()
                                 Image(systemName: "chevron.right")
                                     .font(.caption)
-                                    .foregroundColor(.appMuted)
+                                    .foregroundColor(Theme.textMuted)
                             }
                             .padding(14)
-                            .background(Theme.cardDark)
+                            .background(Theme.surfaceVariantDark.opacity(0.45))
                             .cornerRadius(12)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.darkBorder, lineWidth: 1))
                         }
+                        .padding(.horizontal, 16)
                     }
-                    .padding(16)
-                    .padding(.bottom, 60)
+                    .padding(.bottom, 80) // Prostor za BottomNavBar
                 }
             }
-            .navigationTitle("Nastavitve")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
-                GlobalSyncManager.shared.reportScreen("Nastavitve")
-                refreshDiagnostics()
-            }
-            .sheet(isPresented: $showAboutModal) {
-                aboutModalView
-            }
-            .sheet(isPresented: $showCustomLimitModal) {
-                customLimitModalView
-            }
         }
-        .navigationViewStyle(.stack)
+        .sheet(isPresented: $showAboutModal) {
+            aboutModalView
+        }
+        .sheet(isPresented: $showCustomLimitModal) {
+            customLimitModalView
+        }
+        .onAppear {
+            GlobalSyncManager.shared.reportScreen("Nastavitve")
+            refreshDiagnostics()
+        }
     }
     
     // MARK: - Pomožni gradniki
-    
-    private func diagnosticRow(icon: String, title: String, subtitle: String, isOk: Bool) -> some View {
+    private func diagnosticItem(title: String, subtitle: String, isApproved: Bool) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.subheadline)
-                .foregroundColor(.beerGold)
-                .frame(width: 24)
-            
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.caption)
-                    .fontWeight(.bold)
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white)
                 Text(subtitle)
-                    .font(.caption2)
-                    .foregroundColor(.appMuted)
+                    .font(.system(size: 12))
+                    .foregroundColor(Theme.textMuted)
             }
-            
             Spacer()
-            
-            Image(systemName: isOk ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                .foregroundColor(isOk ? Theme.drajvGreen : Theme.drajvRed)
-                .font(.headline)
+            Image(systemName: isApproved ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                .foregroundColor(isApproved ? Theme.drajvGreen : Theme.drajvRed)
+                .font(.system(size: 18))
         }
         .padding(12)
     }
@@ -287,34 +271,16 @@ struct SettingsView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.caption)
-                    .fontWeight(.bold)
+                    .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white)
                 Text(subtitle)
-                    .font(.caption2)
-                    .foregroundColor(.appMuted)
+                    .font(.system(size: 12))
+                    .foregroundColor(Theme.textMuted)
             }
             Spacer()
             Toggle("", isOn: isOn)
                 .labelsHidden()
                 .tint(Theme.drajvRed)
-        }
-    }
-    
-    private func chipButton(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption)
-                .fontWeight(isSelected ? .bold : .medium)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(isSelected ? Theme.beerGold : Theme.cardDark)
-                .foregroundColor(isSelected ? .black : .white)
-                .cornerRadius(12)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(isSelected ? Theme.beerGold : Color.white.opacity(0.1), lineWidth: 1)
-                )
         }
     }
     
@@ -348,88 +314,90 @@ struct SettingsView: View {
         }
     }
     
-    // MARK: - Modala O Aplikaciji
     private var aboutModalView: some View {
-        NavigationView {
-            ZStack {
-                Theme.bgDark.edgesIgnoringSafeArea(.all)
+        ZStack {
+            Theme.bgDark.edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 20) {
+                Text("🍻")
+                    .font(.system(size: 64))
                 
-                VStack(spacing: 20) {
-                    Text("🍻")
-                        .font(.system(size: 64))
+                VStack(spacing: 6) {
+                    Text("ŠankFinder")
+                        .font(.title)
+                        .fontWeight(.black)
+                        .foregroundColor(Theme.beerGold)
+                    
+                    Text("Različica 1.2.0 (Build 36)")
+                        .font(.subheadline)
+                        .foregroundColor(Theme.textMuted)
+                }
+                
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("ŠankFinder je sodobna aplikacija za odkrivanje lokalov, vodenje po mestu, varno vrnitev domov ter zabavo s prijatelji med večernimi izhodi.")
+                        .font(.subheadline)
+                        .foregroundColor(.white.opacity(0.9))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 20)
                     
                     VStack(spacing: 6) {
-                        Text("ŠankFinder")
-                            .font(.title)
-                            .fontWeight(.black)
-                            .foregroundColor(.beerGold)
-                        
-                        Text("Različica 1.2.0 (Build 36)")
-                            .font(.subheadline)
-                            .foregroundColor(.appMuted)
+                        Text("Kartografija: OpenStreetMap Mapnik 🗺️")
+                        Text("Peš usmerjanje: OSRM Routing Engine 🚶")
+                        Text("Skupina: Pivska Klapa v živo 👥")
                     }
-                    
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("ŠankFinder je sodobna aplikacija za odkrivanje lokalov, vodenje po mestu, varno vrnitev domov ter zabavo s prijatelji med večernimi izhodi.")
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.9))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
-                        
-                        VStack(spacing: 6) {
-                            Text("Kartografija: OpenStreetMap Mapnik 🗺️")
-                            Text("Peš usmerjanje: OSRM Routing Engine 🚶")
-                            Text("Skupina: Pivska Klapa v živo 👥")
-                        }
-                        .font(.caption)
-                        .foregroundColor(.appMuted)
-                        .frame(maxWidth: .infinity)
-                    }
-                    .padding(16)
-                    .background(Theme.cardDark)
-                    .cornerRadius(16)
-                    .padding(.horizontal, 20)
-                    
-                    Text("© 2026 ŠankFinder Ekipa • Na zdravje!")
-                        .font(.caption2)
-                        .foregroundColor(.appMuted)
-                    
-                    Spacer()
+                    .font(.caption)
+                    .foregroundColor(Theme.textMuted)
+                    .frame(maxWidth: .infinity)
                 }
-                .padding(.top, 30)
-            }
-            .navigationTitle("O Aplikaciji")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Zapri") { showAboutModal = false }
-                        .foregroundColor(.beerGold)
-                        .fontWeight(.bold)
+                .padding(16)
+                .background(Theme.cardDark)
+                .cornerRadius(16)
+                .padding(.horizontal, 20)
+                
+                Text("© 2026 ŠankFinder Ekipa • Na zdravje!")
+                    .font(.caption2)
+                    .foregroundColor(Theme.textMuted)
+                
+                Button("Zapri") {
+                    showAboutModal = false
                 }
+                .font(.headline)
+                .foregroundColor(.black)
+                .padding(.horizontal, 40)
+                .padding(.vertical, 12)
+                .background(Theme.beerGold)
+                .cornerRadius(12)
+                
+                Spacer()
             }
+            .padding(.top, 40)
         }
     }
     
-    // MARK: - Modal za limit po meri
     private var customLimitModalView: some View {
-        NavigationView {
-            ZStack {
-                Theme.bgDark.edgesIgnoringSafeArea(.all)
+        ZStack {
+            Theme.bgDark.edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 20) {
+                Text("Vnesi število lokalov (5 - 100):")
+                    .font(.headline)
+                    .foregroundColor(.white)
                 
-                VStack(spacing: 20) {
-                    Text("Vnesi število lokalov (5 - 100):")
-                        .font(.headline)
-                        .foregroundColor(.white)
-                    
-                    TextField("Npr. 35", text: $customLimitInput)
-                        .keyboardType(.numberPad)
-                        .font(.title2)
-                        .multilineTextAlignment(.center)
-                        .padding(12)
-                        .background(Theme.cardDark)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
-                        .padding(.horizontal, 40)
+                TextField("Npr. 35", text: $customLimitInput)
+                    .keyboardType(.numberPad)
+                    .font(.title2)
+                    .multilineTextAlignment(.center)
+                    .padding(12)
+                    .background(Theme.cardDark)
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                    .padding(.horizontal, 40)
+                
+                HStack(spacing: 14) {
+                    Button("Prekliči") {
+                        showCustomLimitModal = false
+                    }
+                    .foregroundColor(Theme.textMuted)
                     
                     Button("Potrdi") {
                         if let count = Int(customLimitInput), count >= 5, count <= 100 {
@@ -439,23 +407,15 @@ struct SettingsView: View {
                     }
                     .font(.headline)
                     .foregroundColor(.black)
-                    .padding(.horizontal, 32)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 10)
                     .background(Theme.beerGold)
-                    .cornerRadius(12)
-                    
-                    Spacer()
+                    .cornerRadius(10)
                 }
-                .padding(.top, 40)
+                
+                Spacer()
             }
-            .navigationTitle("Limit Lokalov")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Prekliči") { showCustomLimitModal = false }
-                        .foregroundColor(.gray)
-                }
-            }
+            .padding(.top, 40)
         }
     }
 }

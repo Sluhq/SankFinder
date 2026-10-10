@@ -27,6 +27,7 @@
 		C10000000000000000000013 /* ToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* ToolsView.swift */; };
 		C10000000000000000000014 /* HistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* HistoryManager.swift */; };
 		C10000000000000000000015 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* HistoryView.swift */; };
+		C10000000000000000000016 /* MaterialComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* MaterialComponents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -52,6 +53,7 @@
 		B10000000000000000000013 /* ToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolsView.swift; sourceTree = "<group>"; };
 		B10000000000000000000014 /* HistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryManager.swift; sourceTree = "<group>"; };
 		B10000000000000000000015 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		B10000000000000000000016 /* MaterialComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialComponents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -97,6 +99,7 @@
 				B10000000000000000000013 /* ToolsView.swift */,
 				B10000000000000000000014 /* HistoryManager.swift */,
 				B10000000000000000000015 /* HistoryView.swift */,
+				B10000000000000000000016 /* MaterialComponents.swift */,
 			);
 			path = SankFinder;
 			sourceTree = "<group>";
@@ -197,6 +200,7 @@
 				C10000000000000000000013 /* ToolsView.swift in Sources */,
 				C10000000000000000000014 /* HistoryManager.swift in Sources */,
 				C10000000000000000000015 /* HistoryView.swift in Sources */,
+				C10000000000000000000016 /* MaterialComponents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

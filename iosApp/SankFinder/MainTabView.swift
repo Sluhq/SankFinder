@@ -5,70 +5,31 @@ struct MainTabView: View {
     @StateObject private var globalSync = GlobalSyncManager.shared
     @ObservedObject private var bridge = NavigationBridge.shared
     
-    init() {
-        // Oblikovanje spodnje vrstice (Dark tema z BeerGold poudarki)
-        let appearance = UITabBarAppearance()
-        appearance.configureWithOpaqueBackground()
-        appearance.backgroundColor = UIColor(Theme.bgDark)
-        
-        let itemAppearance = UITabBarItemAppearance()
-        itemAppearance.normal.iconColor = UIColor(Theme.textMuted)
-        itemAppearance.normal.titleTextAttributes = [.foregroundColor: UIColor(Theme.textMuted)]
-        
-        itemAppearance.selected.iconColor = UIColor(Theme.beerGold)
-        itemAppearance.selected.titleTextAttributes = [.foregroundColor: UIColor(Theme.beerGold)]
-        
-        appearance.stackedLayoutAppearance = itemAppearance
-        appearance.inlineLayoutAppearance = itemAppearance
-        appearance.compactInlineLayoutAppearance = itemAppearance
-        
-        UITabBar.appearance().standardAppearance = appearance
-        UITabBar.appearance().scrollEdgeAppearance = appearance
-    }
-    
     var body: some View {
-        TabView(selection: $bridge.selectedTab) {
-            // 1. Zavihek: ŠANKI (Seznam lokalov z odpiralnimi časi & navigacijo)
-            BarsListView(locationManager: locationManager)
-                .tabItem {
-                    Image(systemName: "list.bullet")
-                    Text("Šanki")
+        ZStack(alignment: .bottom) {
+            // 1. AKTIVNI ZASLON (0: Šanki, 1: Orodja, 2: Zemljevid, 3: Zgodovina, 4: Nastavitve)
+            Group {
+                switch bridge.selectedTab {
+                case 0:
+                    BarsListView(locationManager: locationManager)
+                case 1:
+                    ToolsView(locationManager: locationManager)
+                case 2:
+                    MapTabView(locationManager: locationManager)
+                case 3:
+                    HistoryView()
+                case 4:
+                    SettingsView()
+                default:
+                    BarsListView(locationManager: locationManager)
                 }
-                .tag(0)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             
-            // 2. Zavihek: ORODJA (Pivska klapa, Burek pavza, Kolo, Ruleta, Bill Splitter, Taksi)
-            ToolsView(locationManager: locationManager)
-                .tabItem {
-                    Image(systemName: "wrench.and.screwdriver.fill")
-                    Text("Orodja")
-                }
-                .tag(1)
-            
-            // 3. Zavihek: ZEMLJEVID (Osrednji gumb z vodenjem, HUD-om in kompas puščico)
-            MapTabView(locationManager: locationManager)
-                .tabItem {
-                    Image(systemName: "map.fill")
-                    Text("Zemljevid")
-                }
-                .tag(2)
-            
-            // 4. Zavihek: ZGODOVINA (Obiski, računi, statistika porabe)
-            HistoryView()
-                .tabItem {
-                    Image(systemName: "clock.arrow.circlepath")
-                    Text("Zgodovina")
-                }
-                .tag(3)
-            
-            // 5. Zavihek: NASTAVITVE (Čista diagnostika, radij, limit lokalov)
-            SettingsView()
-                .tabItem {
-                    Image(systemName: "gearshape.fill")
-                    Text("Nastavitve")
-                }
-                .tag(4)
+            // 2. MATERIAL 3 BOTTOM NAV BAR (Identičen Android BottomNavigation.kt z 18dp zaobljenim vrhom in zlatim krogom)
+            MaterialBottomNavBar(selectedIndex: $bridge.selectedTab)
         }
-        .accentColor(Theme.beerGold)
+        .edgesIgnoringSafeArea(.bottom)
         .onAppear {
             globalSync.start()
             reportCurrentTab(bridge.selectedTab)
