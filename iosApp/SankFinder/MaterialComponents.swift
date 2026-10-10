@@ -122,7 +122,7 @@ struct MaterialBottomNavBar: View {
                             }
                             
                             Text(item.label)
-                                .font(.system(size: 10, weight: isSelected ? .bold : .normal))
+                                .font(.system(size: 10, weight: isSelected ? .bold : .regular))
                                 .foregroundColor(isSelected ? (isCenter ? Theme.beerGold : Theme.beerGold) : Theme.textMuted)
                                 .lineLimit(1)
                         }

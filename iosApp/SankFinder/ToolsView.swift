@@ -538,7 +538,7 @@ struct ToolsView: View {
                 ForEach(0..<tipOptions.count, id: \.self) { idx in
                     Button(action: { selectedTipIndex = idx }) {
                         Text("\(Int(tipOptions[idx] * 100))%")
-                            .font(.system(size: 11, weight: selectedTipIndex == idx ? .bold : .normal))
+                            .font(.system(size: 11, weight: selectedTipIndex == idx ? .bold : .regular))
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(selectedTipIndex == idx ? Theme.beerGold : Theme.surfaceDark)
@@ -548,17 +548,12 @@ struct ToolsView: View {
                 }
             }
             
-            // Izračun na osebo
-            let total = Double(totalBillAmount.replacingOccurrences(of: ",", with: ".")) ?? 0.0
-            let totalWithTip = total * (1.0 + tipOptions[selectedTipIndex])
-            let perPerson = peopleCount > 0 ? totalWithTip / Double(peopleCount) : 0.0
-            
             HStack {
                 Text("Znesek na osebo:")
                     .font(.system(size: 14, weight: .bold))
                     .foregroundColor(.white)
                 Spacer()
-                Text(String(format: "%.2f €", perPerson))
+                Text(String(format: "%.2f €", perPersonAmount))
                     .font(.system(size: 20, weight: .black))
                     .foregroundColor(Theme.beerGold)
             }
@@ -668,6 +663,13 @@ struct ToolsView: View {
     }
     
     // MARK: - Pomožne funkcije
+    private var perPersonAmount: Double {
+        let total = Double(totalBillAmount.replacingOccurrences(of: ",", with: ".")) ?? 0.0
+        let tip = tipOptions.indices.contains(selectedTipIndex) ? tipOptions[selectedTipIndex] : 0.0
+        let totalWithTip = total * (1.0 + tip)
+        return peopleCount > 0 ? totalWithTip / Double(peopleCount) : 0.0
+    }
+    
     private func rollRandomBar() {
         let userPos = locationManager.location ?? LocationManager.defaultCoordinate
         Task {
