@@ -3,10 +3,10 @@ import SwiftUI
 struct MainTabView: View {
     @StateObject private var locationManager = LocationManager()
     @StateObject private var globalSync = GlobalSyncManager.shared
-    @State private var selectedTab = 0
+    @ObservedObject private var bridge = NavigationBridge.shared
     
     init() {
-        // Oblikovanje spodnje vrstice
+        // Oblikovanje spodnje vrstice (Dark tema z BeerGold poudarki)
         let appearance = UITabBarAppearance()
         appearance.configureWithOpaqueBackground()
         appearance.backgroundColor = UIColor(Theme.bgDark)
@@ -27,35 +27,40 @@ struct MainTabView: View {
     }
     
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: $bridge.selectedTab) {
+            // 1. Zavihek: ŠANKI (Seznam lokalov z odpiralnimi časi & navigacijo)
+            BarsListView(locationManager: locationManager)
+                .tabItem {
+                    Image(systemName: "list.bullet")
+                    Text("Šanki")
+                }
+                .tag(0)
+            
+            // 2. Zavihek: ORODJA (Pivska klapa, Burek pavza, Kolo, Ruleta, Bill Splitter, Taksi)
+            ToolsView(locationManager: locationManager)
+                .tabItem {
+                    Image(systemName: "wrench.and.screwdriver.fill")
+                    Text("Orodja")
+                }
+                .tag(1)
+            
+            // 3. Zavihek: ZEMLJEVID (Osrednji gumb z vodenjem, HUD-om in kompas puščico)
             MapTabView(locationManager: locationManager)
                 .tabItem {
                     Image(systemName: "map.fill")
                     Text("Zemljevid")
                 }
-                .tag(0)
-            
-            BarsListView(locationManager: locationManager)
-                .tabItem {
-                    Image(systemName: "list.bullet")
-                    Text("Lokali")
-                }
-                .tag(1)
-            
-            GamesView()
-                .tabItem {
-                    Image(systemName: "die.face.5.fill")
-                    Text("Igre")
-                }
                 .tag(2)
             
-            SquadView()
+            // 4. Zavihek: ZGODOVINA (Obiski, računi, statistika porabe)
+            HistoryView()
                 .tabItem {
-                    Image(systemName: "person.3.fill")
-                    Text("Klapa")
+                    Image(systemName: "clock.arrow.circlepath")
+                    Text("Zgodovina")
                 }
                 .tag(3)
             
+            // 5. Zavihek: NASTAVITVE (Čista diagnostika, radij, limit lokalov)
             SettingsView()
                 .tabItem {
                     Image(systemName: "gearshape.fill")
@@ -66,9 +71,9 @@ struct MainTabView: View {
         .accentColor(Theme.beerGold)
         .onAppear {
             globalSync.start()
-            reportCurrentTab(selectedTab)
+            reportCurrentTab(bridge.selectedTab)
         }
-        .onChange(of: selectedTab) { newTab in
+        .onChange(of: bridge.selectedTab) { newTab in
             reportCurrentTab(newTab)
         }
     }
@@ -76,10 +81,10 @@ struct MainTabView: View {
     private func reportCurrentTab(_ tab: Int) {
         let name: String
         switch tab {
-        case 0: name = "Zemljevid & Šanki"
-        case 1: name = "Seznam lokalov"
-        case 2: name = "Pivske igre"
-        case 3: name = "Pivska Klapa"
+        case 0: name = "Šanki (Seznam lokalov)"
+        case 1: name = "Šank Orodja Hub"
+        case 2: name = "Zemljevid & Šanki"
+        case 3: name = "Zgodovina obiskov"
         case 4: name = "Nastavitve"
         default: name = "Glavni zaslon"
         }

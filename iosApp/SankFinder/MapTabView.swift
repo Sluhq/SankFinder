@@ -3,7 +3,10 @@ import CoreLocation
 
 struct MapTabView: View {
     @ObservedObject var locationManager: LocationManager
+    @ObservedObject private var bridge = NavigationBridge.shared
     @StateObject private var network = NetworkManager.shared
+    @ObservedObject private var history = HistoryManager.shared
+    @ObservedObject private var squad = SquadManager.shared
     
     @State private var centerCoord: CLLocationCoordinate2D?
     @State private var bars: [Lokal] = []
@@ -13,13 +16,16 @@ struct MapTabView: View {
     @State private var isLoading: Bool = false
     @State private var searchRadius: Int = 1000 // 1 km
     @State private var errorMessage: String?
+    @State private var showAddedToHistoryAlert: Bool = false
     
     var body: some View {
         ZStack {
-            // 1. ZEMLJEVID (OpenStreetMap / Carto Voyager)
+            // 1. ZEMLJEVID ČEZ CEL ZASLON
             CustomMapView(
                 centerCoordinate: $centerCoord,
+                userHeading: locationManager.heading,
                 bars: bars,
+                squadMembers: squad.members,
                 selectedLokal: selectedBar,
                 routeCoordinates: activeRoute?.coordinates ?? [],
                 onSelectLokal: { bar in
@@ -28,18 +34,19 @@ struct MapTabView: View {
             )
             .edgesIgnoringSafeArea(.all)
             
-            // 2. ZGORNJI ELEMENTI (Iskalnik, Radius, Orodna vrstica)
+            // 2. KONTROLE IN ZGORNJI / SPODNJI HUD
             VStack(spacing: 8) {
-                topBar
-                
-                if let route = activeRoute {
-                    navigationBanner(route: route)
+                if let route = activeRoute, let target = selectedBar ?? bridge.targetLokalForNavigation {
+                    // Turn-by-Turn Zgornji Zeleni HUD (Google Maps / Android slog)
+                    navigationTurnHud(route: route)
                         .transition(.move(edge: .top).combined(with: .opacity))
+                } else {
+                    topControlsBar
                 }
                 
                 Spacer()
                 
-                // 3. SPODNJI ELEMENTI (Gumbi & Detajli lokala)
+                // Desni kontrolni stolpec (Kompas, Moja Lokacija, Osveži)
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
@@ -64,41 +71,64 @@ struct MapTabView: View {
                         }
                     }
                     .padding(.trailing, 16)
-                    .padding(.bottom, selectedBar != nil ? 10 : 80)
+                    .padding(.bottom, (selectedBar != nil || activeRoute != nil) ? 10 : 80)
                 }
                 
-                if let bar = selectedBar {
+                // Spodnji Navigation Status HUD (med navigacijo)
+                if let route = activeRoute, let target = selectedBar ?? bridge.targetLokalForNavigation {
+                    navigationStatusBar(route: route, target: target)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 65)
+                } else if let bar = selectedBar {
+                    // Spodnja kartica lokala (pred začetkom navigacije)
                     barDetailSheet(bar: bar)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 60)
+                        .padding(.horizontal, 14)
+                        .padding(.bottom, 65)
                 }
             }
             
             if isLoading {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .beerGold))
-                    .scaleEffect(1.5)
+                    .scaleEffect(1.4)
                     .padding(20)
                     .background(Theme.cardDark.opacity(0.85))
-                    .cornerRadius(12)
+                    .cornerRadius(14)
             }
         }
         .onAppear {
             GlobalSyncManager.shared.reportScreen("Zemljevid & Šanki")
             locationManager.requestPermission()
             refreshBars()
+            
+            // Če je prišla zahteva za navigacijo iz drugega zavihka
+            if let target = bridge.targetLokalForNavigation {
+                selectedBar = target
+                calculateRoute(to: target)
+                bridge.targetLokalForNavigation = nil
+            }
+        }
+        .onChange(of: bridge.targetLokalForNavigation) { target in
+            if let target = target {
+                selectedBar = target
+                calculateRoute(to: target)
+                bridge.targetLokalForNavigation = nil
+            }
         }
         .onChange(of: locationManager.location?.latitude) { _ in
             if let loc = locationManager.location {
                 SquadManager.shared.updateLocation(lat: loc.latitude, lon: loc.longitude)
             }
         }
+        .alert(isPresented: $showAddedToHistoryAlert) {
+            Alert(title: Text("Obisk zabeležen! 🍻"), message: Text("Lokal je bil dodan v tvojo Zgodovino obiskov."), dismissButton: .default(Text("V redu")))
+        }
     }
     
-    // MARK: - Subviews
-    
-    private var topBar: some View {
+    // MARK: - Zgornja vrstica
+    private var topControlsBar: some View {
         HStack {
             HStack(spacing: 8) {
                 Text("🍺")
@@ -116,7 +146,6 @@ struct MapTabView: View {
             
             Spacer()
             
-            // Izbira radija
             Menu {
                 Button("500 m") { searchRadius = 500; refreshBars() }
                 Button("1 km (Privzeto)") { searchRadius = 1000; refreshBars() }
@@ -141,65 +170,102 @@ struct MapTabView: View {
         .padding(.top, 8)
     }
     
-    private func navigationBanner(route: OsrmRoute) -> some View {
-        VStack(spacing: 6) {
-            HStack {
-                Image(systemName: "figure.walk")
-                    .font(.title2)
-                    .foregroundColor(.beerGold)
+    // MARK: - Zgornji zeleni Turn-by-Turn HUD (identičen Androidu #1B5E20)
+    private func navigationTurnHud(route: OsrmRoute) -> some View {
+        let steps = route.legs?.first?.steps ?? []
+        let currentStep = steps.indices.contains(currentStepIndex) ? steps[currentStepIndex] : steps.first
+        
+        return HStack(spacing: 14) {
+            // Smerna ikona v belem krogu
+            ZStack {
+                Circle()
+                    .fill(Color.white.opacity(0.25))
+                    .frame(width: 48, height: 48)
                 
-                VStack(alignment: .leading, spacing: 2) {
+                Image(systemName: maneuverIcon(modifier: currentStep?.maneuver?.modifier))
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+            }
+            
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(Int(currentStep?.distance ?? route.distance)) m")
+                    .font(.title2)
+                    .fontWeight(.black)
+                    .foregroundColor(.white)
+                
+                Text(currentStep?.maneuver?.instructionText ?? "Nadaljujte naravnost")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white.opacity(0.95))
+                    .lineLimit(2)
+            }
+            
+            Spacer()
+            
+            Button(action: { activeRoute = nil }) {
+                Image(systemName: "xmark")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(8)
+                    .background(Color.black.opacity(0.2))
+                    .clipShape(Circle())
+            }
+        }
+        .padding(14)
+        .background(Color(red: 27/255, green: 94/255, blue: 32/255)) // #1B5E20 Google Maps temno zelena
+        .cornerRadius(18)
+        .shadow(color: .black.opacity(0.5), radius: 8)
+        .padding(.horizontal, 14)
+        .padding(.top, 6)
+    }
+    
+    // MARK: - Spodnji statusni navigacijski trak (ETA, metri, cilj)
+    private func navigationStatusBar(route: OsrmRoute, target: Lokal) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(route.formattedDuration)
                         .font(.headline)
                         .fontWeight(.bold)
-                        .foregroundColor(.white)
-                    Text("Preostanek poti: \(route.formattedDistance)")
+                        .foregroundColor(Color(red: 46/255, green: 125/255, blue: 50/255)) // Zelena #2E7D32
+                    
+                    Text("•  \(route.formattedDistance)")
                         .font(.subheadline)
-                        .foregroundColor(.appMuted)
+                        .foregroundColor(.white)
+                    
+                    Text("•  \(calculateEta(durationSeconds: route.duration))")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.beerGold)
                 }
                 
-                Spacer()
-                
-                Button(action: { activeRoute = nil }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(Theme.drajvRed)
-                }
+                Text("Cilj: \(target.name)")
+                    .font(.caption)
+                    .foregroundColor(.appMuted)
+                    .lineLimit(1)
             }
             
-            if let legs = route.legs, let steps = legs.first?.steps, !steps.isEmpty {
-                let currentStep = steps[min(currentStepIndex, steps.count - 1)]
-                HStack {
-                    Image(systemName: "arrow.turn.up.right")
-                        .foregroundColor(.beerGold)
-                    Text(currentStep.maneuver?.instructionText ?? "Nadaljujte")
-                        .font(.subheadline)
-                        .foregroundColor(.white)
-                    if let name = currentStep.name, !name.isEmpty {
-                        Text("(\(name))")
-                            .font(.caption)
-                            .foregroundColor(.appMuted)
-                    }
-                    Spacer()
-                    Text("\(Int(currentStep.distance)) m")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .foregroundColor(.beerGold)
-                }
-                .padding(.top, 4)
+            Spacer()
+            
+            Button(action: { activeRoute = nil; selectedBar = nil }) {
+                Text("Končaj")
+                    .font(.subheadline)
+                    .fontWeight(.bold)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(Theme.drajvRed)
+                    .foregroundColor(.white)
+                    .cornerRadius(10)
             }
         }
         .padding(14)
         .background(Theme.cardDark)
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(Theme.beerGold.opacity(0.4), lineWidth: 1)
-        )
-        .padding(.horizontal, 16)
-        .shadow(radius: 6)
+        .cornerRadius(18)
+        .shadow(color: .black.opacity(0.6), radius: 8)
     }
     
+    // MARK: - Spodnja kartica lokala (pred začetkom navigacije)
     private func barDetailSheet(bar: Lokal) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -213,9 +279,7 @@ struct MapTabView: View {
                         .foregroundColor(.appMuted)
                         .lineLimit(1)
                 }
-                
                 Spacer()
-                
                 Button(action: { selectedBar = nil }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.title3)
@@ -223,52 +287,72 @@ struct MapTabView: View {
                 }
             }
             
-            HStack {
-                Label(bar.formattedDistance(from: locationManager.location), systemImage: "figure.walk")
+            HStack(spacing: 12) {
+                // Status odprtosti
+                Text(bar.statusBadge.text)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(bar.statusBadge.isGreen ? Theme.drajvGreen : Theme.drajvRed)
+                
+                Text("•  \(bar.formattedDistance(from: locationManager.location))")
                     .font(.caption)
                     .foregroundColor(.beerGold)
                 
-                if let cuisine = bar.cuisine {
-                    Text("•  \(cuisine)")
-                        .font(.caption)
-                        .foregroundColor(.appMuted)
-                }
-                
                 Spacer()
+                
+                // Gumb za shranjevanje obiska
+                Button(action: {
+                    history.addVisit(barName: bar.name, address: bar.address)
+                    showAddedToHistoryAlert = true
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bookmark.fill")
+                        Text("Shrani obisk")
+                    }
+                    .font(.caption2)
+                    .foregroundColor(.beerGold)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.surfaceDark)
+                    .cornerRadius(6)
+                }
+            }
+            
+            // Gumba za navigacijo in klic
+            HStack(spacing: 10) {
+                Button(action: { calculateRoute(to: bar) }) {
+                    HStack {
+                        Image(systemName: "figure.walk")
+                        Text("Vodi me peš (Navigiraj)")
+                            .fontWeight(.bold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color(red: 46/255, green: 125/255, blue: 50/255)) // #2E7D32 Zelena
+                    .foregroundColor(.white)
+                    .cornerRadius(12)
+                }
                 
                 if let phone = bar.phone {
                     Link(destination: URL(string: "tel:\(phone.replacingOccurrences(of: " ", with: ""))")!) {
                         Image(systemName: "phone.fill")
-                            .foregroundColor(.beerGold)
-                            .padding(8)
-                            .background(Theme.surfaceDark)
-                            .clipShape(Circle())
+                            .font(.headline)
+                            .foregroundColor(.black)
+                            .padding(.vertical, 12)
+                            .padding(.horizontal, 16)
+                            .background(Theme.beerGold)
+                            .cornerRadius(12)
                     }
                 }
-            }
-            
-            // Gumb za zagon OSRM peš navigacije
-            Button(action: { calculateRoute(to: bar) }) {
-                HStack {
-                    Image(systemName: "location.north.line.fill")
-                    Text("Vodi me peš (OSRM)")
-                        .fontWeight(.bold)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .background(Theme.beerGold)
-                .foregroundColor(.black)
-                .cornerRadius(12)
             }
         }
         .padding(16)
         .background(Theme.cardDark)
         .cornerRadius(20)
-        .shadow(radius: 10)
+        .shadow(color: .black.opacity(0.6), radius: 10)
     }
     
-    // MARK: - Actions
-    
+    // MARK: - Pomožne funkcije
     private func centerOnUser() {
         if let loc = locationManager.location {
             centerCoord = loc
@@ -280,7 +364,6 @@ struct MapTabView: View {
     private func refreshBars() {
         isLoading = true
         let userPos = locationManager.location ?? LocationManager.defaultCoordinate
-        
         Task {
             do {
                 let fetched = try await network.fetchNearbyBars(
@@ -313,7 +396,6 @@ struct MapTabView: View {
                 DispatchQueue.main.async {
                     self.activeRoute = route
                     self.currentStepIndex = 0
-                    self.selectedBar = nil // zapri sheet in odpri navigation banner
                     self.isLoading = false
                 }
             } catch {
@@ -323,5 +405,24 @@ struct MapTabView: View {
                 }
             }
         }
+    }
+    
+    private func maneuverIcon(modifier: String?) -> String {
+        switch modifier?.lowercased() {
+        case "left": return "arrow.turn.up.left"
+        case "right": return "arrow.turn.up.right"
+        case "slight left": return "arrow.up.left"
+        case "slight right": return "arrow.up.right"
+        case "sharp left": return "arrow.uturn.left"
+        case "sharp right": return "arrow.uturn.right"
+        default: return "figure.walk"
+        }
+    }
+    
+    private func calculateEta(durationSeconds: Double) -> String {
+        let etaDate = Date().addingTimeInterval(durationSeconds)
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        return "ETA " + formatter.string(from: etaDate)
     }
 }

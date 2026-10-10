@@ -23,6 +23,10 @@
 		C1000000000000000000000E /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* MainTabView.swift */; };
 		C10000000000000000000010 /* GlobalSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* GlobalSyncManager.swift */; };
 		C10000000000000000000011 /* SquadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* SquadManager.swift */; };
+		C10000000000000000000012 /* NavigationBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000012 /* NavigationBridge.swift */; };
+		C10000000000000000000013 /* ToolsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000013 /* ToolsView.swift */; };
+		C10000000000000000000014 /* HistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* HistoryManager.swift */; };
+		C10000000000000000000015 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* HistoryView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -44,6 +48,10 @@
 		B1000000000000000000000F /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		B10000000000000000000010 /* GlobalSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlobalSyncManager.swift; sourceTree = "<group>"; };
 		B10000000000000000000011 /* SquadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadManager.swift; sourceTree = "<group>"; };
+		B10000000000000000000012 /* NavigationBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NavigationBridge.swift; sourceTree = "<group>"; };
+		B10000000000000000000013 /* ToolsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolsView.swift; sourceTree = "<group>"; };
+		B10000000000000000000014 /* HistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryManager.swift; sourceTree = "<group>"; };
+		B10000000000000000000015 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -85,6 +93,10 @@
 				B1000000000000000000000F /* Info.plist */,
 				B10000000000000000000010 /* GlobalSyncManager.swift */,
 				B10000000000000000000011 /* SquadManager.swift */,
+				B10000000000000000000012 /* NavigationBridge.swift */,
+				B10000000000000000000013 /* ToolsView.swift */,
+				B10000000000000000000014 /* HistoryManager.swift */,
+				B10000000000000000000015 /* HistoryView.swift */,
 			);
 			path = SankFinder;
 			sourceTree = "<group>";
@@ -181,6 +193,10 @@
 				C1000000000000000000000E /* MainTabView.swift in Sources */,
 				C10000000000000000000010 /* GlobalSyncManager.swift in Sources */,
 				C10000000000000000000011 /* SquadManager.swift in Sources */,
+				C10000000000000000000012 /* NavigationBridge.swift in Sources */,
+				C10000000000000000000013 /* ToolsView.swift in Sources */,
+				C10000000000000000000014 /* HistoryManager.swift in Sources */,
+				C10000000000000000000015 /* HistoryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
