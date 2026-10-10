@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainTabView: View {
     @StateObject private var locationManager = LocationManager()
+    @StateObject private var globalSync = GlobalSyncManager.shared
     @State private var selectedTab = 0
     
     init() {
@@ -63,5 +64,25 @@ struct MainTabView: View {
                 .tag(4)
         }
         .accentColor(Theme.beerGold)
+        .onAppear {
+            globalSync.start()
+            reportCurrentTab(selectedTab)
+        }
+        .onChange(of: selectedTab) { newTab in
+            reportCurrentTab(newTab)
+        }
+    }
+    
+    private func reportCurrentTab(_ tab: Int) {
+        let name: String
+        switch tab {
+        case 0: name = "Zemljevid & Šanki"
+        case 1: name = "Seznam lokalov"
+        case 2: name = "Pivske igre"
+        case 3: name = "Pivska Klapa"
+        case 4: name = "Nastavitve"
+        default: name = "Glavni zaslon"
+        }
+        globalSync.reportScreen(name)
     }
 }

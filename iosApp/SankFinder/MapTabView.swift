@@ -85,8 +85,14 @@ struct MapTabView: View {
             }
         }
         .onAppear {
+            GlobalSyncManager.shared.reportScreen("Zemljevid & Šanki")
             locationManager.requestPermission()
             refreshBars()
+        }
+        .onChange(of: locationManager.location?.latitude) { _ in
+            if let loc = locationManager.location {
+                SquadManager.shared.updateLocation(lat: loc.latitude, lon: loc.longitude)
+            }
         }
     }
     

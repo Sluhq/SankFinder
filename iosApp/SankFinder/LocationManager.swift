@@ -5,24 +5,32 @@ import Combine
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     
-    @Published var location: CLLocationCoordinate2D?
+    // Začetna lokacija: center Ljubljane (da se takoj naložijo lokali, preden GPS zaklene satelite)
+    static let defaultCoordinate = CLLocationCoordinate2D(latitude: 46.056946, longitude: 14.505751)
+    
+    @Published var location: CLLocationCoordinate2D? = LocationManager.defaultCoordinate
     @Published var heading: Double = 0.0
     @Published var isAuthorized: Bool = false
     @Published var errorDescription: String?
-    
-    // Default location fallback (Ljubljana Center)
-    static let defaultCoordinate = CLLocationCoordinate2D(latitude: 46.056946, longitude: 14.505751)
     
     override init() {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        manager.distanceFilter = 5.0 // Update every 5 meters
-        manager.headingFilter = 5.0  // Update every 5 degrees
+        manager.distanceFilter = 3.0
+        manager.headingFilter = 3.0
+        
+        // Takoj sproži zahtevo za lokacijo ob zagonu
+        manager.requestWhenInUseAuthorization()
+        manager.startUpdatingLocation()
+        if CLLocationManager.headingAvailable() {
+            manager.startUpdatingHeading()
+        }
     }
     
     func requestPermission() {
         manager.requestWhenInUseAuthorization()
+        manager.startUpdatingLocation()
     }
     
     func startUpdating() {
@@ -32,23 +40,21 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         }
     }
     
-    func stopUpdating() {
-        manager.stopUpdatingLocation()
-        manager.stopUpdatingHeading()
-    }
-    
     // MARK: - CLLocationManagerDelegate
     
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         switch manager.authorizationStatus {
         case .authorizedWhenInUse, .authorizedAlways:
             isAuthorized = true
-            startUpdating()
+            manager.startUpdatingLocation()
+            if CLLocationManager.headingAvailable() {
+                manager.startUpdatingHeading()
+            }
         case .denied, .restricted:
             isAuthorized = false
-            errorDescription = "Dostop do lokacije je onemogočen."
+            errorDescription = "Dostop do lokacije je izklopljen v nastavitvah telefona."
         case .notDetermined:
-            requestPermission()
+            manager.requestWhenInUseAuthorization()
         @unknown default:
             break
         }
@@ -58,6 +64,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         guard let latest = locations.last else { return }
         DispatchQueue.main.async {
             self.location = latest.coordinate
+            self.isAuthorized = true
         }
     }
     
@@ -70,8 +77,6 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        DispatchQueue.main.async {
-            self.errorDescription = error.localizedDescription
-        }
+        print("GPS opozorilo: \(error.localizedDescription)")
     }
 }

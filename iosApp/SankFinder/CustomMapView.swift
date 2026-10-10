@@ -1,15 +1,6 @@
 import SwiftUI
 import MapKit
 
-class OpenStreetTileOverlay: MKTileOverlay {
-    override func url(forTilePath path: MKTileOverlayPath) -> URL {
-        // Carto Voyager (enak kot v Android verziji ŠankFinderja)
-        // Podpira tudi standardni OpenStreetMap: https://tile.openstreetmap.org/{z}/{x}/{y}.png
-        let urlString = "https://basemaps.cartocdn.com/rastertiles/voyager/\(path.z)/\(path.x)/\(path.y).png"
-        return URL(string: urlString) ?? super.url(forTilePath: path)
-    }
-}
-
 class LokalAnnotation: NSObject, MKAnnotation {
     let lokal: Lokal
     var coordinate: CLLocationCoordinate2D { lokal.coordinate }
@@ -35,20 +26,28 @@ struct CustomMapView: UIViewRepresentable {
         mapView.showsUserLocation = true
         mapView.userTrackingMode = .none
         
-        // 1. Zamenjaj Applov privzeti zemljevid s tvojim OpenStreetMap / Carto Voyager
-        let tileOverlay = OpenStreetTileOverlay()
-        tileOverlay.canReplaceMapContent = true // Popolnoma prekrije Apple Maps!
-        mapView.addOverlay(tileOverlay, level: .aboveLabels)
+        // Carto Voyager ploščice (OpenStreetMap)
+        let tileOverlay = MKTileOverlay(urlTemplate: "https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png")
+        tileOverlay.tileSize = CGSize(width: 256, height: 256)
+        tileOverlay.canReplaceMapContent = false // Zanesljivo: če ploščice še nalagajo, ni praznega ekrana
+        mapView.addOverlay(tileOverlay, level: .aboveRoads)
         
-        // Začetni pogled
+        // Začetni pogled (center Ljubljane ali trenutna lokacija)
         let startCoord = centerCoordinate ?? LocationManager.defaultCoordinate
-        let region = MKCoordinateRegion(center: startCoord, latitudinalMeters: 1200, longitudinalMeters: 1200)
+        let region = MKCoordinateRegion(center: startCoord, span: MKCoordinateSpan(latitudeDelta: 0.015, longitudeDelta: 0.015))
         mapView.setRegion(region, animated: false)
         
         return mapView
     }
     
     func updateUIView(_ uiView: MKMapView, context: Context) {
+        // Če se spremeni centerCoordinate in ni še centrirano
+        if let center = centerCoordinate, context.coordinator.lastCenteredId != "\(center.latitude),\(center.longitude)" {
+            context.coordinator.lastCenteredId = "\(center.latitude),\(center.longitude)"
+            let region = MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012))
+            uiView.setRegion(region, animated: true)
+        }
+        
         // Posodobi pot (Polyline)
         let currentPolylines = uiView.overlays.compactMap { $0 as? MKPolyline }
         uiView.removeOverlays(currentPolylines)
@@ -56,6 +55,10 @@ struct CustomMapView: UIViewRepresentable {
         if !routeCoordinates.isEmpty {
             let polyline = MKPolyline(coordinates: routeCoordinates, count: routeCoordinates.count)
             uiView.addOverlay(polyline, level: .aboveRoads)
+            
+            // Samodejno približaj na traso
+            let rect = polyline.boundingMapRect
+            uiView.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 80, left: 40, bottom: 200, right: 40), animated: true)
         }
         
         // Posodobi označevalce lokalov (Pins)
@@ -83,12 +86,13 @@ struct CustomMapView: UIViewRepresentable {
     
     class Coordinator: NSObject, MKMapViewDelegate {
         var parent: CustomMapView
+        var lastCenteredId: String? = nil
         
         init(_ parent: CustomMapView) {
             self.parent = parent
         }
         
-        // Risanje ploščic in rute
+        // Risanje ploščic in OSRM rute
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let tileOverlay = overlay as? MKTileOverlay {
                 return MKTileOverlayRenderer(tileOverlay: tileOverlay)
@@ -104,25 +108,31 @@ struct CustomMapView: UIViewRepresentable {
             return MKOverlayRenderer(overlay: overlay)
         }
         
-        // Označevalci piva na zemljevidu
+        // Označevalci piva na zemljevidu (identični kot na Androidu: zeleni z belim obročem in pivom)
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard let lokalAnnotation = annotation as? LokalAnnotation else { return nil }
             
-            let identifier = "LokalMarker"
+            let identifier = "SankMarker"
             var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
             if view == nil {
                 view = MKMarkerAnnotationView(annotation: lokalAnnotation, reuseIdentifier: identifier)
                 view?.canShowCallout = true
+                view?.rightCalloutAccessoryView = UIButton(type: .detailDisclosure)
             } else {
                 view?.annotation = lokalAnnotation
             }
             
-            view?.markerTintColor = UIColor(Theme.beerGold)
+            view?.markerTintColor = UIColor(red: 46/255, green: 125/255, blue: 50/255, alpha: 1.0) // Zelena kot na Androidu
             view?.glyphText = "🍺"
             return view
         }
         
         func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
+            guard let annot = view.annotation as? LokalAnnotation else { return }
+            parent.onSelectLokal(annot.lokal)
+        }
+        
+        func mapView(_ mapView: MKMapView, annotationView view: MKAnnotationView, calloutAccessoryControlTapped control: UIControl) {
             guard let annot = view.annotation as? LokalAnnotation else { return }
             parent.onSelectLokal(annot.lokal)
         }

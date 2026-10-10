@@ -28,6 +28,11 @@
 	<string>ŠankFinder potrebuje tvojo lokacijo za natančno peš navigacijo po mestu.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>ŠankFinder potrebuje kamero za skeniranje računov in QR kod.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+	</dict>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UIRequiredDeviceCapabilities</key>
