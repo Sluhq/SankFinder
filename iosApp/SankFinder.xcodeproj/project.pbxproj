@@ -21,8 +21,8 @@
 		C1000000000000000000000C /* SquadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000C /* SquadView.swift */; };
 		C1000000000000000000000D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000D /* SettingsView.swift */; };
 		C1000000000000000000000E /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000000E /* MainTabView.swift */; };
-		C10000000000000000000010 /* GlobalSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000010 /* GlobalSyncManager.swift */; };
-		C10000000000000000000011 /* SquadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B100000000000000000000011 /* SquadManager.swift */; };
+		C10000000000000000000010 /* GlobalSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000010 /* GlobalSyncManager.swift */; };
+		C10000000000000000000011 /* SquadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000011 /* SquadManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
