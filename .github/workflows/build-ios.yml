@@ -34,7 +34,9 @@ jobs:
       - name: Ustvari .IPA paket za AltStore in Sideloadly
         run: |
           mkdir -p Payload
-          cp -r "${{ github.workspace }}/build/Release-iphoneos/SankFinder.app" Payload/
+          APP_PATH=$(find "${{ github.workspace }}/build" -name "SankFinder.app" -type d | head -n 1)
+          echo "Najdena aplikacija: $APP_PATH"
+          cp -r "$APP_PATH" Payload/
           zip -qr SankFinder.ipa Payload
           ls -lh SankFinder.ipa
           echo "✅ ŠankFinder.ipa je uspešno ustvarjen!"
