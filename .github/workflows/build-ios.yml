@@ -1,0 +1,47 @@
+name: Build ŠankFinder iOS (.IPA)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch: # Omogoča ročni zagon s klikom na gumb v GitHubu!
+
+jobs:
+  build-ios:
+    name: Zgradi iOS .IPA v oblaku
+    runs-on: macos-14 # Brezplačni Apple Silicon Mac v GitHub oblaku!
+
+    steps:
+      - name: Prenesi kodo (Checkout)
+        uses: actions/checkout@v4
+
+      - name: Priprava Xcode okolja
+        run: |
+          xcodebuild -version
+          echo "Xcode pripravljen za prevajanje ŠankFinderja."
+
+      - name: Prevedi ŠankFinder (Xcode Build)
+        run: |
+          xcodebuild build \
+            -project iosApp/SankFinder.xcodeproj \
+            -scheme SankFinder \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            BUILD_DIR="${{ github.workspace }}/build"
+
+      - name: Ustvari .IPA paket za AltStore in Sideloadly
+        run: |
+          mkdir -p Payload
+          cp -r "${{ github.workspace }}/build/Release-iphoneos/SankFinder.app" Payload/
+          zip -qr SankFinder.ipa Payload
+          ls -lh SankFinder.ipa
+          echo "✅ ŠankFinder.ipa je uspešno ustvarjen!"
+
+      - name: Naloži .IPA za prenos
+        uses: actions/upload-artifact@v4
+        with:
+          name: SankFinder-iOS-IPA
+          path: SankFinder.ipa
+          retention-days: 14

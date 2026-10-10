@@ -1,0 +1,13 @@
+{
+  "name": "sankfinder-squad-server",
+  "version": "1.0.0",
+  "description": "ŠankFinder Real-time Squad Chat & Live Location Server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "ws": "^8.18.0"
+  }
+}

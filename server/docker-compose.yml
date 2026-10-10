@@ -1,0 +1,13 @@
+services:
+  sankfinder-squad:
+    build: .
+    container_name: sankfinder-squad
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/app/data
+      - ./index.js:/app/index.js
+    environment:
+      - PORT=8080
+      - DATA_DIR=/app/data
