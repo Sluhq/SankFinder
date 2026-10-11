@@ -69,6 +69,9 @@ struct OsrmManeuver: Codable {
     let bearing_after: Int?
     let bearing_before: Int?
     
+    var bearingBefore: Double { Double(bearing_before ?? 0) }
+    var bearingAfter: Double { Double(bearing_after ?? 0) }
+    
     var instructionText: String {
         let mod = modifier ?? ""
         let t = type ?? "turn"
