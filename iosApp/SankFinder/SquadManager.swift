@@ -16,6 +16,8 @@ class SquadManager: ObservableObject {
     @Published var myUserName: String = "Prijatelj"
     @Published var myDrinksCount: Int = 0
     
+    private let userAgent = "SankFinderApp-Slovenia/1.0 (https://sankfinder.sluga.me; contact@sluga.me)"
+    
     private var webSocketTask: URLSessionWebSocketTask?
     private let urlSession = URLSession(configuration: .default)
     
@@ -75,6 +77,7 @@ class SquadManager: ObservableObject {
             request.httpMethod = "POST"
             request.timeoutInterval = 6.0
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
             let body = ["name": roomName]
             request.httpBody = try? JSONSerialization.data(withJSONObject: body)
             
@@ -131,6 +134,7 @@ class SquadManager: ObservableObject {
             request.httpMethod = "POST"
             request.timeoutInterval = 6.0
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
             let body = ["code": cleanCode]
             request.httpBody = try? JSONSerialization.data(withJSONObject: body)
             
@@ -210,7 +214,9 @@ class SquadManager: ObservableObject {
         let urlString = "\(scheme)://\(hostInfo.host)/ws?code=\(code)&name=\(encName)&userId=\(myUserId)"
         guard let url = URL(string: urlString) else { return }
         
-        let request = URLRequest(url: url)
+        var request = URLRequest(url: url)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 8.0
         webSocketTask = urlSession.webSocketTask(with: request)
         webSocketTask?.resume()
         

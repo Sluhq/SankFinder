@@ -13,6 +13,15 @@ class GlobalSyncManager: ObservableObject {
     private var pingTimer: Timer?
     private var reconnectTimer: Timer?
     
+    private let userAgent = "SankFinderApp-Slovenia/1.0 (https://sankfinder.sluga.me; contact@sluga.me)"
+    
+    // Kandidata za povezavo: Javna domena in neposredni lokalni strežnik
+    private let hosts = [
+        (host: "sankfinder.sluga.me", useSsl: true),
+        (host: "192.168.200.209:8080", useSsl: false)
+    ]
+    private var currentHostIndex = 0
+    
     private var currentScreen: String = "Glavna stran"
     private var deviceId: String {
         if let id = UserDefaults.standard.string(forKey: "sankfinder_device_id") {
@@ -21,6 +30,47 @@ class GlobalSyncManager: ObservableObject {
         let newId = "ios_" + UUID().uuidString.prefix(8).lowercased()
         UserDefaults.standard.set(newId, forKey: "sankfinder_device_id")
         return newId
+    }
+    
+    private var deviceModelName: String {
+        var systemInfo = utsname()
+        uname(&systemInfo)
+        let machineMirror = Mirror(reflecting: systemInfo.machine)
+        let identifier = machineMirror.children.reduce("") { id, element in
+            guard let value = element.value as? Int8, value != 0 else { return id }
+            return id + String(UnicodeScalar(UInt8(value)))
+        }
+        
+        let map: [String: String] = [
+            "iPhone14,2": "Apple iPhone 13 Pro",
+            "iPhone14,3": "Apple iPhone 13 Pro Max",
+            "iPhone14,4": "Apple iPhone 13 mini",
+            "iPhone14,5": "Apple iPhone 13",
+            "iPhone14,7": "Apple iPhone 14",
+            "iPhone14,8": "Apple iPhone 14 Plus",
+            "iPhone15,2": "Apple iPhone 14 Pro",
+            "iPhone15,3": "Apple iPhone 14 Pro Max",
+            "iPhone15,4": "Apple iPhone 15",
+            "iPhone15,5": "Apple iPhone 15 Plus",
+            "iPhone16,1": "Apple iPhone 15 Pro",
+            "iPhone16,2": "Apple iPhone 15 Pro Max",
+            "iPhone17,1": "Apple iPhone 16 Pro",
+            "iPhone17,2": "Apple iPhone 16 Pro Max",
+            "iPhone17,3": "Apple iPhone 16",
+            "iPhone17,4": "Apple iPhone 16 Plus",
+            "arm64": "Apple iPhone Simulator",
+            "x86_64": "Apple iPhone Simulator"
+        ]
+        
+        if let friendly = map[identifier] {
+            return friendly
+        }
+        if identifier.hasPrefix("iPhone") {
+            return "Apple iPhone (\(identifier))"
+        } else if identifier.hasPrefix("iPad") {
+            return "Apple iPad (\(identifier))"
+        }
+        return "Apple \(UIDevice.current.model)"
     }
     
     init() {}
@@ -37,26 +87,28 @@ class GlobalSyncManager: ObservableObject {
     private func connect() {
         disconnect()
         
-        let model = UIDevice.current.name.isEmpty ? UIDevice.current.model : UIDevice.current.name
+        let model = deviceModelName
         let os = "iOS \(UIDevice.current.systemVersion)"
         
         let encModel = model.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "iPhone"
         let encOs = os.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "iOS"
         let encScreen = currentScreen.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "Glavna"
         
-        let urlString = "wss://sankfinder.sluga.me/ws?clientType=app&deviceId=\(deviceId)&model=\(encModel)&os=\(encOs)&screen=\(encScreen)&version=1.0"
+        let hostInfo = hosts[currentHostIndex]
+        let scheme = hostInfo.useSsl ? "wss" : "ws"
+        let urlString = "\(scheme)://\(hostInfo.host)/ws?clientType=app&deviceId=\(deviceId)&model=\(encModel)&os=\(encOs)&screen=\(encScreen)&version=1.0"
+        
         guard let url = URL(string: urlString) else { return }
         
-        let request = URLRequest(url: url)
+        var request = URLRequest(url: url)
+        request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 8.0
+        
         webSocketTask = urlSession.webSocketTask(with: request)
         webSocketTask?.resume()
         
         listenForMessages()
         startPingTimer()
-        
-        DispatchQueue.main.async {
-            self.isConnected = true
-        }
     }
     
     private func disconnect() {
@@ -74,6 +126,9 @@ class GlobalSyncManager: ObservableObject {
             guard let self = self else { return }
             switch result {
             case .success(let message):
+                DispatchQueue.main.async {
+                    self.isConnected = true
+                }
                 switch message {
                 case .string(let text):
                     self.handleIncomingText(text)
@@ -86,6 +141,8 @@ class GlobalSyncManager: ObservableObject {
                 DispatchQueue.main.async {
                     self.isConnected = false
                 }
+                // Preklopi na rezervni gostitelj, če glavni pade
+                self.currentHostIndex = (self.currentHostIndex + 1) % self.hosts.count
                 self.scheduleReconnect()
             }
         }
@@ -97,7 +154,7 @@ class GlobalSyncManager: ObservableObject {
         
         let type = json["type"] as? String ?? ""
         DispatchQueue.main.async {
-            if type == "push_notification" {
+            if type == "global_push" || type == "push_notification" {
                 let title = json["title"] as? String ?? "Obvestilo"
                 let msg = json["message"] as? String ?? ""
                 self.lastAnnouncement = "\(title): \(msg)"
@@ -115,14 +172,18 @@ class GlobalSyncManager: ObservableObject {
     }
     
     private func sendPing() {
-        webSocketTask?.sendPing { error in
+        webSocketTask?.sendPing { [weak self] error in
             if error != nil {
-                // Če ping ne gre skozi, poskusi s ponovno povezavo
-                self.scheduleReconnect()
+                self?.currentHostIndex = ((self?.currentHostIndex ?? 0) + 1) % (self?.hosts.count ?? 1)
+                self?.scheduleReconnect()
             }
         }
         
-        let pingObj = ["type": "ping"]
+        let pingObj: [String: Any] = [
+            "type": "ping",
+            "deviceId": deviceId,
+            "screen": currentScreen
+        ]
         if let data = try? JSONSerialization.data(withJSONObject: pingObj),
            let str = String(data: data, encoding: .utf8) {
             webSocketTask?.send(.string(str)) { _ in }
@@ -139,7 +200,7 @@ class GlobalSyncManager: ObservableObject {
     
     private func scheduleReconnect() {
         reconnectTimer?.invalidate()
-        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: false) { [weak self] _ in
+        reconnectTimer = Timer.scheduledTimer(withTimeInterval: 4.0, repeats: false) { [weak self] _ in
             self?.connect()
         }
     }

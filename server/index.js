@@ -1426,7 +1426,30 @@ function renderAdminDashboardHtml() {
             </tr>
           </thead>
           <tbody id="devices-body">
-            <tr><td colspan="6" style="text-align:center; color: var(--text-muted);">Trenutno ni povezanih naprav.</td></tr>
+            <tr><td colspan="6" style="text-align:center; color: var(--text-muted);">Trenutno ni povezanih naprav v živo.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="panel" style="margin-top: 20px;">
+        <div class="panel-header">
+          <h2 class="panel-title">Vse Zaznane & Registrirane Naprave (Apple & Android v bazi)</h2>
+          <input type="text" class="search-input" id="search-all-devices" placeholder="Išči model, sistem, zaslon..." onkeyup="filterTable('search-all-devices', 'all-devices-body')">
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Model Naprave</th>
+              <th>Sistem & Platforma</th>
+              <th>Zadnji Zaslon</th>
+              <th>IP Naslov</th>
+              <th>Prvič Viden</th>
+              <th>Nazadnje Aktiven</th>
+              <th>Akcija</th>
+            </tr>
+          </thead>
+          <tbody id="all-devices-body">
+            <tr><td colspan="7" style="text-align:center; color: var(--text-muted);">Ni zabeleženih naprav.</td></tr>
           </tbody>
         </table>
       </div>
@@ -1559,14 +1582,15 @@ function renderAdminDashboardHtml() {
         document.getElementById('badge-devices').textContent = data.overview.onlineAppDevicesCount;
         document.getElementById('badge-rooms').textContent = data.overview.activeRoomsCount;
 
-        // 2. Tabela naprav v živo
+        // 2. Tabela naprav v živo in vseh naprav
         renderLiveDevices(data.liveDevices);
+        renderAllDevices(data.allDevices, data.liveDevices);
 
         // 3. Tabela zgodovine push obvestil
         renderPushHistory(data.pushHistory);
 
         // 4. Posodobi spustni seznam ciljnih naprav v push obrazcu
-        updateTargetDevicesDropdown(data.liveDevices);
+        updateTargetDevicesDropdown(data.liveDevices, data.allDevices);
 
         // 5. Tabela sob
         renderRooms(data.rooms);
@@ -1587,16 +1611,24 @@ function renderAdminDashboardHtml() {
       }
     }
 
+    function getOsBadge(os, model) {
+      const isApple = (os && os.toLowerCase().includes('ios')) || (model && (model.toLowerCase().includes('iphone') || model.toLowerCase().includes('ipad') || model.toLowerCase().includes('apple')));
+      if (isApple) {
+        return '<span class="tab-pill" style="background:rgba(0,122,255,0.18); color:#0A84FF; border:1px solid rgba(0,122,255,0.4); font-weight:700;"> Apple iOS</span>';
+      }
+      return '<span class="tab-pill" style="background:rgba(61,220,132,0.18); color:#3DDC84; border:1px solid rgba(61,220,132,0.4); font-weight:700;">🤖 Android</span>';
+    }
+
     function renderLiveDevices(devices) {
       const tbody = document.getElementById('devices-body');
       if (!devices || devices.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--text-muted);">Trenutno ni aktivno povezanih naprav.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--text-muted);">Trenutno ni aktivno povezanih naprav v živo.</td></tr>';
         return;
       }
       tbody.innerHTML = devices.map(d => \`
         <tr>
-          <td><strong>\${escapeHtml(d.model)}</strong> <span class="mono" style="font-size:11px; color:var(--text-muted);">(\${escapeHtml(d.deviceId)})</span></td>
-          <td>\${escapeHtml(d.osVersion || 'Android')} <span class="tab-pill">v\${escapeHtml(d.appVersion || '1.0')}</span></td>
+          <td><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#3DDC84; margin-right:6px; box-shadow:0 0 8px #3DDC84;"></span><strong>\${escapeHtml(d.model)}</strong> <span class="mono" style="font-size:11px; color:var(--text-muted);">(\${escapeHtml(d.deviceId)})</span></td>
+          <td>\${getOsBadge(d.osVersion, d.model)} <span class="mono" style="font-size:11px; margin-left:4px;">\${escapeHtml(d.osVersion || '')}</span></td>
           <td><span style="color:var(--gold); font-weight:700;">\${escapeHtml(d.currentScreen || 'Glavna')}</span></td>
           <td class="mono">\${escapeHtml(d.ip)}</td>
           <td>\${formatTime(d.connectedAt)}</td>
@@ -1623,13 +1655,53 @@ function renderAdminDashboardHtml() {
       \`).join('');
     }
 
-    function updateTargetDevicesDropdown(devices) {
+    function renderAllDevices(devices, liveDevices) {
+      const tbody = document.getElementById('all-devices-body');
+      if (!tbody) return;
+      if (!devices || devices.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-muted);">Ni zabeleženih naprav.</td></tr>';
+        return;
+      }
+      const liveSet = new Set((liveDevices || []).map(d => d.deviceId));
+      tbody.innerHTML = devices.map(d => {
+        const isOnline = liveSet.has(d.device_id);
+        const statusDot = isOnline 
+          ? '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#3DDC84; margin-right:6px; box-shadow:0 0 6px #3DDC84;" title="Povezan v živo"></span>'
+          : '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#64748B; margin-right:6px;" title="Neaktiven"></span>';
+        return \`
+          <tr>
+            <td>\${statusDot}<strong>\${escapeHtml(d.model)}</strong> <span class="mono" style="font-size:11px; color:var(--text-muted);">(\${escapeHtml(d.device_id)})</span></td>
+            <td>\${getOsBadge(d.os_version, d.model)} <span class="mono" style="font-size:11px; margin-left:4px;">\${escapeHtml(d.os_version || '')}</span></td>
+            <td><span style="color:var(--gold); font-weight:600;">\${escapeHtml(d.current_screen || 'Glavna')}</span></td>
+            <td class="mono">\${escapeHtml(d.ip)}</td>
+            <td style="font-size:12px;">\${formatTime(d.first_seen)}</td>
+            <td style="font-size:12px;"><strong>\${formatTime(d.last_seen)}</strong></td>
+            <td>
+              <button class="btn btn-blue" onclick="openTargetPush('\${escapeHtml(d.device_id)}')">Obvesti</button>
+            </td>
+          </tr>
+        \`;
+      }).join('');
+    }
+
+    function updateTargetDevicesDropdown(liveDevices, allDevices) {
       const select = document.getElementById('push-target');
       const currentVal = select.value;
       let html = '<option value="">Vsi uporabniki aplikacije (Globalni broadcast)</option>';
+      
+      const devices = (allDevices && allDevices.length > 0) ? allDevices : (liveDevices || []);
+      const liveSet = new Set((liveDevices || []).map(d => d.deviceId));
+      
       if (devices && devices.length > 0) {
         devices.forEach(d => {
-          html += \`<option value="\${escapeHtml(d.deviceId)}">\${escapeHtml(d.model)} (\${escapeHtml(d.deviceId)}) - \${escapeHtml(d.currentScreen)}</option>\`;
+          const devId = d.device_id || d.deviceId;
+          const model = d.model || 'Naprava';
+          const os = d.os_version || d.osVersion || '';
+          const isApple = os.toLowerCase().includes('ios') || model.toLowerCase().includes('iphone') || model.toLowerCase().includes('ipad');
+          const osPrefix = isApple ? '🍎 [Apple]' : '🤖 [Android]';
+          const isOnline = liveSet.has(devId);
+          const statusText = isOnline ? '🟢 NA SPLETU' : '⚪ Neaktiven';
+          html += \`<option value="\${escapeHtml(devId)}">\${osPrefix} \${escapeHtml(model)} (\${escapeHtml(devId)}) - \${statusText}</option>\`;
         });
       }
       select.innerHTML = html;

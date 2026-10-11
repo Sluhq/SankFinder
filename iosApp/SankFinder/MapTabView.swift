@@ -28,6 +28,7 @@ struct MapTabView: View {
                 squadMembers: squad.members,
                 selectedLokal: selectedBar,
                 routeCoordinates: activeRoute?.coordinates ?? [],
+                routeSteps: activeRoute?.legs?.first?.steps ?? [],
                 onSelectLokal: { bar in
                     selectedBar = bar
                 }
@@ -389,14 +390,27 @@ struct MapTabView: View {
     }
     
     private func maneuverIcon(modifier: String?) -> String {
-        switch modifier?.lowercased() {
-        case "left": return "arrow.turn.up.left"
-        case "right": return "arrow.turn.up.right"
-        case "slight left": return "arrow.up.left"
-        case "slight right": return "arrow.up.right"
-        case "sharp left": return "arrow.uturn.left"
-        case "sharp right": return "arrow.uturn.right"
-        default: return "figure.walk"
+        let mod = modifier?.lowercased() ?? ""
+        if mod.contains("left") {
+            if mod.contains("sharp") {
+                return "arrow.uturn.backward"
+            } else if mod.contains("slight") {
+                return "arrow.up.left"
+            } else {
+                return "arrow.turn.up.left"
+            }
+        } else if mod.contains("right") {
+            if mod.contains("sharp") {
+                return "arrow.uturn.forward"
+            } else if mod.contains("slight") {
+                return "arrow.up.right"
+            } else {
+                return "arrow.turn.up.right"
+            }
+        } else if mod.contains("u-turn") || mod.contains("uturn") {
+            return "arrow.uturn.down"
+        } else {
+            return "arrow.up"
         }
     }
     

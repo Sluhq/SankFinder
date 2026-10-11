@@ -420,27 +420,79 @@ struct ToolsView: View {
                 }
             }
             
-            // Kolo z iglo
+            // Kolo sreče z izseki za vsakega prijatelja in rdečo iglo
+            let wheelSize: CGFloat = 190
+            let count = max(friendsList.count, 1)
+            let sliceAngleDeg = 360.0 / Double(count)
+            let sliceColors: [Color] = [
+                Color(hex: 0xF59E0B), // Beer Gold
+                Color(hex: 0xEA580C), // Orange
+                Color(hex: 0x10B981), // Emerald
+                Color(hex: 0x3B82F6), // Royal Blue
+                Color(hex: 0x8B5CF6), // Purple
+                Color(hex: 0xEC4899), // Pink
+                Color(hex: 0x14B8A6), // Teal
+                Color(hex: 0xEF4444)  // Crimson
+            ]
+            
             ZStack {
-                Circle()
-                    .stroke(Theme.beerGold, lineWidth: 6)
-                    .frame(width: 140, height: 140)
-                    .rotationEffect(.degrees(wheelAngle))
-                    .overlay(
-                        VStack {
-                            Image(systemName: "arrowtriangle.down.fill")
-                                .font(.system(size: 20))
-                                .foregroundColor(Theme.drajvRed)
-                                .offset(y: -75)
-                        }
-                    )
+                // 1. Zunanje vrteče se kolo s pisanimi izseki in imeni
+                ZStack {
+                    ForEach(0..<count, id: \.self) { idx in
+                        let start = Angle.degrees(Double(idx) * sliceAngleDeg)
+                        let end = Angle.degrees(Double(idx + 1) * sliceAngleDeg)
+                        WheelSliceShape(startAngle: start, endAngle: end)
+                            .fill(sliceColors[idx % sliceColors.count])
+                            .overlay(
+                                WheelSliceShape(startAngle: start, endAngle: end)
+                                    .stroke(Color.white.opacity(0.35), lineWidth: 1.5)
+                            )
+                    }
+                    
+                    ForEach(0..<friendsList.count, id: \.self) { idx in
+                        let mid = Angle.degrees((Double(idx) + 0.5) * sliceAngleDeg)
+                        let name = friendsList[idx]
+                        Text(name)
+                            .font(.system(size: friendsList.count > 6 ? 10 : 12, weight: .black))
+                            .foregroundColor(.white)
+                            .shadow(color: .black.opacity(0.85), radius: 2)
+                            .lineLimit(1)
+                            .offset(x: (wheelSize / 2.0) * 0.55)
+                            .rotationEffect(mid)
+                    }
+                }
+                .frame(width: wheelSize, height: wheelSize)
+                .clipShape(Circle())
+                .overlay(Circle().stroke(Color.white, lineWidth: 3.5))
+                .shadow(color: .black.opacity(0.55), radius: 8)
+                .rotationEffect(.degrees(wheelAngle))
                 
-                Image(systemName: "mug.fill")
-                    .font(.system(size: 32))
-                    .foregroundColor(Theme.beerGold)
+                // 2. Sredinski zlati pivski čep
+                ZStack {
+                    Circle()
+                        .fill(Theme.cardDark)
+                        .frame(width: 44, height: 44)
+                        .overlay(Circle().stroke(Theme.beerGold, lineWidth: 3))
+                        .shadow(color: .black.opacity(0.6), radius: 3)
+                    
+                    Image(systemName: "mug.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(Theme.beerGold)
+                }
+                
+                // 3. Rdeči kazalec na vrhu (kaže točno na zmagovalca)
+                VStack {
+                    Image(systemName: "arrowtriangle.down.fill")
+                        .font(.system(size: 24))
+                        .foregroundColor(Theme.drajvRed)
+                        .shadow(color: .black.opacity(0.7), radius: 3, y: 2)
+                        .offset(y: -((wheelSize / 2.0) + 8))
+                    Spacer()
+                }
+                .frame(height: wheelSize)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
+            .padding(.vertical, 14)
             
             if let payer = selectedPayer {
                 VStack(spacing: 4) {
@@ -691,25 +743,49 @@ struct ToolsView: View {
     }
     
     private func spinWheel() {
+        guard !friendsList.isEmpty, !isSpinningWheel else { return }
         isSpinningWheel = true
         selectedPayer = nil
-        let turns = Double.random(in: 4...8) * 360.0
-        let targetAngle = wheelAngle + turns
+        funPayerQuote = nil
         
-        withAnimation(.easeOut(duration: 2.5)) {
+        // 1. Naključno izberi zmagovalca med prijatelji
+        let winnerIndex = Int.random(in: 0..<friendsList.count)
+        let winner = friendsList[winnerIndex]
+        
+        // 2. Izračunaj kot tako, da se kolo ustavi natanko na zmagovalčevem izseku
+        let count = Double(friendsList.count)
+        let sliceAngleDeg = 360.0 / count
+        let winnerCenterAngle = (Double(winnerIndex) + 0.5) * sliceAngleDeg
+        
+        // Kazalec na vrhu ustreza kotu 270° (ali -90°).
+        // Ko se kolo zavrti za targetAngle, mora veljati: (270 - (targetAngle % 360)) == winnerCenterAngle
+        let currentNormalized = wheelAngle.truncatingRemainder(dividingBy: 360.0)
+        let neededOffset = (270.0 - winnerCenterAngle - currentNormalized)
+        let positiveOffset = ((neededOffset.truncatingRemainder(dividingBy: 360.0)) + 360.0).truncatingRemainder(dividingBy: 360.0)
+        
+        // Dodaj 5 do 8 polnih zasukov za napetost
+        let fullSpins = Double(Int.random(in: 5...8)) * 360.0
+        let targetAngle = wheelAngle + fullSpins + positiveOffset
+        
+        withAnimation(.easeOut(duration: 2.8)) {
             wheelAngle = targetAngle
         }
         
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.8) {
             self.isSpinningWheel = false
-            self.selectedPayer = self.friendsList.randomElement() ?? "Ti"
+            self.selectedPayer = winner
+            
             let quotes = [
-                "Denar je, da se zapravi!",
-                "Legenda večera časti brez pomisleka!",
-                "Tvoja jetra morda trpijo, ampak tvoja denarnica bo še bolj!",
-                "Runda je sveta stvar!"
+                "Pivski bogovi so odločili: \(winner), odpri tošl!",
+                "\(winner) plača, ker se že pol ure dela, da išče denarnico!",
+                "Danes je tvoj srečni dan, \(winner)! Runda je tvoja čast!",
+                "\(winner) plača za celo mizo, naslednjič pa pije samo vodo!",
+                "Kelner, račun nesi \(winner)-ju! Vsi na njegovo zdravje!"
             ]
             self.funPayerQuote = quotes.randomElement()
+            
+            let generator = UINotificationFeedbackGenerator()
+            generator.notificationOccurred(.success)
         }
     }
     
@@ -717,5 +793,21 @@ struct ToolsView: View {
         maxTaxiSteps = Int.random(in: 3...6)
         currentTaxiConvinceIndex = 0
         isTaxiConvincing = true
+    }
+}
+
+// MARK: - Izsek kolesa za posameznega prijatelja
+struct WheelSliceShape: Shape {
+    let startAngle: Angle
+    let endAngle: Angle
+    
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2.0
+        path.move(to: center)
+        path.addArc(center: center, radius: radius, startAngle: startAngle, endAngle: endAngle, clockwise: false)
+        path.closeSubpath()
+        return path
     }
 }
