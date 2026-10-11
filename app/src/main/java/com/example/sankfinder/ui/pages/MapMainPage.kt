@@ -288,7 +288,9 @@ fun MapMainPage(
         }
     }
 
-    // Posodobitev položaja modre pikice uporabnika z gladko animacijo hoje
+    var isTrackingUser by remember { mutableStateOf(true) }
+
+    // Posodobitev položaja modre pikice uporabnika z gladko animacijo hoje in sledenjem kamere
     LaunchedEffect(userLocation) {
         val loc = userLocation ?: return@LaunchedEffect
         val targetGeo = GeoPoint(loc.latitude, loc.longitude)
@@ -302,7 +304,12 @@ fun MapMainPage(
             mapView.overlays.add(newMarker)
             userMarkerRef = newMarker
             mapView.controller.setCenter(targetGeo)
-            mapView.controller.setZoom(16.0)
+            mapView.controller.setZoom(16.5)
+        }
+
+        // Če je sledenje vklopljeno ali je aktivna navigacija, naj kamera zvezno sledi uporabniku
+        if (isTrackingUser || isNavigating) {
+            mapView.controller.animateTo(targetGeo)
         }
 
         if (marker != null && marker.position != null) {
@@ -456,10 +463,12 @@ fun MapMainPage(
             val marker = maneuverMarkerRef ?: createMarkerSafe(mapView)?.also {
                 it.setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
                 it.setInfoWindow(null)
+                it.setFlat(true) // Glodano na cestišče: puščica se NE vrti z zaslonom, ampak leži na cesti
                 mapView.overlays.add(it)
                 maneuverMarkerRef = it
             }
             marker?.let {
+                it.setFlat(true)
                 it.position = geo
 
                 // Poišči segment poti pred in za ovinkom za natančno poravnavo puščice s cesto
@@ -632,6 +641,7 @@ fun MapMainPage(
                         FloatingActionButton(
                             onClick = {
                                 userLocation?.let { loc ->
+                                    isTrackingUser = true
                                     mapView.controller.animateTo(GeoPoint(loc.latitude, loc.longitude))
                                     mapView.controller.setZoom(17.0)
                                 } ?: run {
@@ -641,8 +651,8 @@ fun MapMainPage(
                                 }
                             },
                             modifier = Modifier.size(44.dp),
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = MaterialTheme.colorScheme.onPrimary
+                            containerColor = if (isTrackingUser) BeerGold else MaterialTheme.colorScheme.primary,
+                            contentColor = if (isTrackingUser) Color.Black else MaterialTheme.colorScheme.onPrimary
                         ) {
                             Icon(Icons.Default.MyLocation, contentDescription = "Moja lokacija", modifier = Modifier.size(20.dp))
                         }

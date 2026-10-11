@@ -28,6 +28,48 @@ struct MainTabView: View {
             
             // 2. MATERIAL 3 BOTTOM NAV BAR (Identičen Android BottomNavigation.kt z 18dp zaobljenim vrhom in zlatim krogom)
             MaterialBottomNavBar(selectedIndex: $bridge.selectedTab)
+            
+            // 3. VIZUALNA PASICA ZA OBVESTILO UPRAVE NA VRHU ZASLONA (Kot na Androidu)
+            if let alert = globalSync.activePushAlert {
+                VStack {
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(alert.title)
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.beerGold)
+                            Text(alert.message)
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .lineLimit(3)
+                        }
+                        Spacer()
+                        Button(action: {
+                            withAnimation {
+                                globalSync.activePushAlert = nil
+                            }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .padding(14)
+                    .background(Theme.cardDark)
+                    .cornerRadius(14)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Color.beerGold.opacity(0.6), lineWidth: 1.2)
+                    )
+                    .shadow(color: .black.opacity(0.55), radius: 8, y: 3)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 46)
+                    
+                    Spacer()
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .animation(.spring(), value: globalSync.activePushAlert?.id)
+            }
         }
         .edgesIgnoringSafeArea(.bottom)
         .onAppear {

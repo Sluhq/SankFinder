@@ -199,28 +199,129 @@ class UserHeadingAnnotationView: MKAnnotationView {
     }
 }
 
-// MARK: - Označevalec za puščico naslednjega zavoja na poti
-class RouteManeuverAnnotation: NSObject, MKAnnotation {
-    let stepIndex: Int
+// MARK: - Izris dinamične ukrivljene navigacijske puščice na cestišču (100% identično Androidu)
+func createDynamicTurnArrowImage(turnAngleDeg: CGFloat) -> UIImage {
+    let size: CGFloat = 80.0
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: size, height: size))
+    return renderer.image { ctx in
+        let cgCtx = ctx.cgContext
+        let cx = size / 2.0
+        let cy = size / 2.0
+        let d: CGFloat = 1.15
+        
+        // Omeji kot zavoja med -155° in +155° za naraven izgled
+        let angle = min(max(turnAngleDeg, -155.0), 155.0)
+        let rad = angle * .pi / 180.0
+        let dirX = sin(rad)
+        let dirY = -cos(rad)
+        
+        let stemLen = 20.0 * d
+        let outLen = 22.0 * d
+        
+        let startX = cx
+        let startY = cy + stemLen
+        let shaftEndX = cx + dirX * outLen
+        let shaftEndY = cy + dirY * outLen
+        
+        // 1. Pot stebla puščice
+        let shaftPath = UIBezierPath()
+        shaftPath.move(to: CGPoint(x: startX, y: startY))
+        if abs(angle) < 14.0 {
+            shaftPath.addLine(to: CGPoint(x: shaftEndX, y: shaftEndY))
+        } else {
+            shaftPath.addLine(to: CGPoint(x: cx, y: cy + 5.0 * d))
+            shaftPath.addQuadCurve(to: CGPoint(x: shaftEndX, y: shaftEndY), controlPoint: CGPoint(x: cx, y: cy - 2.0 * d))
+        }
+        
+        // 2. Glava puščice (konica in krilca)
+        let headLen = 13.0 * d
+        let headHalfWidth = 9.5 * d
+        let tipX = shaftEndX + dirX * (5.5 * d)
+        let tipY = shaftEndY + dirY * (5.5 * d)
+        let normX = -dirY
+        let normY = dirX
+        
+        let wing1X = shaftEndX - dirX * (headLen * 0.65) + normX * headHalfWidth
+        let wing1Y = shaftEndY - dirY * (headLen * 0.65) + normY * headHalfWidth
+        let wing2X = shaftEndX - dirX * (headLen * 0.65) - normX * headHalfWidth
+        let wing2Y = shaftEndY - dirY * (headLen * 0.65) - normY * headHalfWidth
+        let notchX = shaftEndX - dirX * (headLen * 0.3)
+        let notchY = shaftEndY - dirY * (headLen * 0.3)
+        
+        let headPath = UIBezierPath()
+        headPath.move(to: CGPoint(x: tipX, y: tipY))
+        headPath.addLine(to: CGPoint(x: wing1X, y: wing1Y))
+        headPath.addLine(to: CGPoint(x: notchX, y: notchY))
+        headPath.addLine(to: CGPoint(x: wing2X, y: wing2Y))
+        headPath.close()
+        
+        // 1. Zunanja senca za globino
+        cgCtx.saveGState()
+        cgCtx.translateBy(x: 0, y: 1.8 * d)
+        let shadowColor = UIColor.black.withAlphaComponent(0.28)
+        cgCtx.setStrokeColor(shadowColor.cgColor)
+        cgCtx.setFillColor(shadowColor.cgColor)
+        cgCtx.setLineWidth(16.0 * d)
+        cgCtx.setLineCap(.round)
+        cgCtx.setLineJoin(.round)
+        cgCtx.addPath(shaftPath.cgPath)
+        cgCtx.strokePath()
+        cgCtx.addPath(headPath.cgPath)
+        cgCtx.fillPath()
+        cgCtx.restoreGState()
+        
+        // 2. Krepek beli rob (casing), ki se natanko ujema z robom poti
+        cgCtx.saveGState()
+        cgCtx.setStrokeColor(UIColor.white.cgColor)
+        cgCtx.setFillColor(UIColor.white.cgColor)
+        cgCtx.setLineWidth(14.0 * d)
+        cgCtx.setLineCap(.round)
+        cgCtx.setLineJoin(.round)
+        cgCtx.addPath(shaftPath.cgPath)
+        cgCtx.strokePath()
+        cgCtx.addPath(headPath.cgPath)
+        cgCtx.fillPath()
+        cgCtx.setLineWidth(3.0 * d)
+        cgCtx.addPath(headPath.cgPath)
+        cgCtx.strokePath()
+        cgCtx.restoreGState()
+        
+        // 3. Notranje smaragdno zeleno jedro (#0F9D58, barva navigacijske poti)
+        cgCtx.saveGState()
+        let emeraldGreen = UIColor(red: 15/255, green: 157/255, blue: 88/255, alpha: 1.0)
+        cgCtx.setStrokeColor(emeraldGreen.cgColor)
+        cgCtx.setFillColor(emeraldGreen.cgColor)
+        cgCtx.setLineWidth(8.0 * d)
+        cgCtx.setLineCap(.round)
+        cgCtx.setLineJoin(.round)
+        cgCtx.addPath(shaftPath.cgPath)
+        cgCtx.strokePath()
+        cgCtx.addPath(headPath.cgPath)
+        cgCtx.fillPath()
+        cgCtx.restoreGState()
+    }
+}
+
+// MARK: - Označevalec za dinamično puščico zavoja na cestišču
+class CurvedManeuverAnnotation: NSObject, MKAnnotation {
     let coordinate: CLLocationCoordinate2D
-    let modifier: String?
-    let title: String?
-    let subtitle: String?
+    let incomingBearing: Double
+    let turnAngle: Double
+    let arrowImage: UIImage
     
-    init(stepIndex: Int, coordinate: CLLocationCoordinate2D, modifier: String?, instruction: String) {
-        self.stepIndex = stepIndex
+    init(coordinate: CLLocationCoordinate2D, incomingBearing: Double, turnAngle: Double, arrowImage: UIImage) {
         self.coordinate = coordinate
-        self.modifier = modifier
-        self.title = instruction
-        self.subtitle = modifier
+        self.incomingBearing = incomingBearing
+        self.turnAngle = turnAngle
+        self.arrowImage = arrowImage
         super.init()
     }
 }
 
-// MARK: - Pogled za puščico zavoja na trasi (Zeleni krog z belo puščico in senco)
-class RouteManeuverAnnotationView: MKAnnotationView {
-    private let badgeView = UIView()
-    private let iconImageView = UIImageView()
+// MARK: - Pogled za ukrivljeno navigacijsko puščico (ravno na cestišču, poravnana s smerjo vožnje)
+class CurvedManeuverAnnotationView: MKAnnotationView {
+    private let arrowImageView = UIImageView()
+    var incomingBearing: Double = 0.0
     
     override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
         super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
@@ -236,56 +337,24 @@ class RouteManeuverAnnotationView: MKAnnotationView {
         self.canShowCallout = false
         self.clusteringIdentifier = nil
         self.displayPriority = .required
-        self.frame = CGRect(x: 0, y: 0, width: 36, height: 36)
+        self.frame = CGRect(x: 0, y: 0, width: 80, height: 80)
         self.centerOffset = CGPoint(x: 0, y: 0)
         
-        badgeView.frame = CGRect(x: 2, y: 2, width: 32, height: 32)
-        badgeView.backgroundColor = UIColor(red: 27/255, green: 94/255, blue: 32/255, alpha: 1.0) // Temno zelena #1B5E20
-        badgeView.layer.cornerRadius = 16
-        badgeView.layer.borderWidth = 2.5
-        badgeView.layer.borderColor = UIColor.white.cgColor
-        badgeView.layer.shadowColor = UIColor.black.cgColor
-        badgeView.layer.shadowOpacity = 0.45
-        badgeView.layer.shadowOffset = CGSize(width: 0, height: 2)
-        badgeView.layer.shadowRadius = 3
-        addSubview(badgeView)
-        
-        iconImageView.frame = CGRect(x: 6, y: 6, width: 20, height: 20)
-        iconImageView.contentMode = .scaleAspectFit
-        iconImageView.tintColor = .white
-        badgeView.addSubview(iconImageView)
-        
-        updateIcon()
+        arrowImageView.frame = self.bounds
+        arrowImageView.contentMode = .center
+        addSubview(arrowImageView)
     }
     
-    func updateIcon() {
-        guard let annot = annotation as? RouteManeuverAnnotation else { return }
-        let mod = annot.modifier?.lowercased() ?? ""
-        let iconName: String
-        if mod.contains("left") {
-            if mod.contains("sharp") {
-                iconName = "arrow.uturn.backward"
-            } else if mod.contains("slight") {
-                iconName = "arrow.up.left"
-            } else {
-                iconName = "arrow.turn.up.left"
-            }
-        } else if mod.contains("right") {
-            if mod.contains("sharp") {
-                iconName = "arrow.uturn.forward"
-            } else if mod.contains("slight") {
-                iconName = "arrow.up.right"
-            } else {
-                iconName = "arrow.turn.up.right"
-            }
-        } else if mod.contains("u-turn") || mod.contains("uturn") {
-            iconName = "arrow.uturn.down"
-        } else {
-            iconName = "arrow.up"
-        }
-        
-        let config = UIImage.SymbolConfiguration(pointSize: 14, weight: .bold)
-        iconImageView.image = UIImage(systemName: iconName, withConfiguration: config)
+    func configure(with annot: CurvedManeuverAnnotation, mapHeading: Double) {
+        self.incomingBearing = annot.incomingBearing
+        self.arrowImageView.image = annot.arrowImage
+        updateRotation(mapHeading: mapHeading)
+    }
+    
+    func updateRotation(mapHeading: Double) {
+        // Zasukaj natanko vzdolž smeri ceste glede na trenutni kot karte
+        let angleRad = CGFloat((incomingBearing - mapHeading) * .pi / 180.0)
+        self.transform = CGAffineTransform(rotationAngle: angleRad)
     }
 }
 
@@ -333,6 +402,7 @@ struct CustomMapView: UIViewRepresentable {
     var selectedLokal: Lokal?
     var routeCoordinates: [CLLocationCoordinate2D]
     var routeSteps: [OsrmStep] = []
+    var currentStepIndex: Int = 0
     var onSelectLokal: (Lokal) -> Void
     
     func makeUIView(context: Context) -> MKMapView {
@@ -346,7 +416,14 @@ struct CustomMapView: UIViewRepresentable {
         mapView.showsBuildings = false
         mapView.showsTraffic = false
         
-        // OpenStreetMap ploščice dodamo na .aboveRoads, tako da je Apple Maps podlaga vedno aktivna,
+        // Omejimo zum na razdaljo, kjer so OpenStreetMap ploščice vedno prisotne (do z=19),
+        // s čimer se prepreči preklop na Apple Maps (slika 2)
+        mapView.cameraZoomRange = MKMapView.CameraZoomRange(
+            minCenterCoordinateDistance: 85.0,
+            maxCenterCoordinateDistance: 2_000_000.0
+        )
+        
+        // OpenStreetMap ploščice dodamo na .aboveRoads,
         // navigacijska trasa pa bo dodana na .aboveLabels in se NIKOLI ne izgubi ali prekrije!
         let osmOverlay = OSMTileOverlay()
         mapView.addOverlay(osmOverlay, level: .aboveRoads)
@@ -390,30 +467,50 @@ struct CustomMapView: UIViewRepresentable {
             context.coordinator.lastRouteCount = 0
         }
         
-        // 2. Posodobitev puščic za zavoje na cesti (Route Maneuver Turn Arrows)
-        let existingManeuvers = uiView.annotations.compactMap { $0 as? RouteManeuverAnnotation }
-        uiView.removeAnnotations(existingManeuvers)
+        // 2. Posodobitev dinamične UKRIVLJENE navigacijske puščice na cestišču za trenutni zavoj (100% kot Android)
+        let existingCurvedManeuvers = uiView.annotations.compactMap { $0 as? CurvedManeuverAnnotation }
+        uiView.removeAnnotations(existingCurvedManeuvers)
         
         if !routeCoordinates.isEmpty && !routeSteps.isEmpty {
-            var maneuverAnnotations: [RouteManeuverAnnotation] = []
-            for (idx, step) in routeSteps.enumerated() {
-                guard let maneuver = step.maneuver,
-                      let loc = maneuver.location, loc.count >= 2 else { continue }
-                let coord = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
+            let stepIdx = routeSteps.indices.contains(currentStepIndex) ? currentStepIndex : 0
+            let step = routeSteps[stepIdx]
+            if let loc = step.maneuver?.location, loc.count >= 2 {
+                let geo = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
                 
-                // Ustvari puščico za zavoje na križiščih
-                let mod = maneuver.modifier?.lowercased()
-                if mod != nil && mod != "straight" {
-                    let annot = RouteManeuverAnnotation(
-                        stepIndex: idx,
-                        coordinate: coord,
-                        modifier: maneuver.modifier,
-                        instruction: maneuver.instructionText
-                    )
-                    maneuverAnnotations.append(annot)
+                var bestIdx = -1
+                var minDist = Double.greatestFiniteMagnitude
+                for (i, pt) in routeCoordinates.enumerated() {
+                    let d = distanceBetween(pt, geo)
+                    if d < minDist {
+                        minDist = d
+                        bestIdx = i
+                    }
                 }
+                
+                let bIn: Double
+                let bOut: Double
+                if bestIdx != -1 && routeCoordinates.count >= 2 {
+                    let pBefore = bestIdx > 0 ? routeCoordinates[bestIdx - 1] : routeCoordinates[0]
+                    let pAfter = bestIdx < routeCoordinates.count - 1 ? routeCoordinates[bestIdx + 1] : routeCoordinates.last!
+                    let rawIn = calculateBearing(from: pBefore, to: geo)
+                    let rawOut = calculateBearing(from: geo, to: pAfter)
+                    bIn = (pBefore.latitude != geo.latitude || pBefore.longitude != geo.longitude) ? rawIn : (step.maneuver?.bearingBefore ?? 0.0)
+                    bOut = (geo.latitude != pAfter.latitude || geo.longitude != pAfter.longitude) ? rawOut : (step.maneuver?.bearingAfter ?? 0.0)
+                } else {
+                    bIn = step.maneuver?.bearingBefore ?? 0.0
+                    bOut = step.maneuver?.bearingAfter ?? 0.0
+                }
+                
+                let rawTurn = ((bOut - bIn + 540.0).truncatingRemainder(dividingBy: 360.0)) - 180.0
+                let arrowImg = createDynamicTurnArrowImage(turnAngleDeg: CGFloat(rawTurn))
+                let annot = CurvedManeuverAnnotation(
+                    coordinate: geo,
+                    incomingBearing: bIn,
+                    turnAngle: rawTurn,
+                    arrowImage: arrowImg
+                )
+                uiView.addAnnotation(annot)
             }
-            uiView.addAnnotations(maneuverAnnotations)
         }
         
         // 3. Posodobitev lokalov (zelene pike)
@@ -450,9 +547,15 @@ struct CustomMapView: UIViewRepresentable {
         var lastCenteredId: String? = nil
         var lastRouteCount: Int = 0
         weak var currentUserView: UserHeadingAnnotationView? = nil
+        weak var currentManeuverView: CurvedManeuverAnnotationView? = nil
         
         init(_ parent: CustomMapView) {
             self.parent = parent
+        }
+        
+        func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
+            let heading = mapView.camera.heading
+            currentManeuverView?.updateRotation(mapHeading: heading)
         }
         
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -480,16 +583,17 @@ struct CustomMapView: UIViewRepresentable {
                 return view
             }
             
-            // 2. Puščice zavojev na trasi (Maneuver Turn Arrows)
-            if let maneuverAnnot = annotation as? RouteManeuverAnnotation {
-                let identifier = "ManeuverArrowMarker"
-                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? RouteManeuverAnnotationView
+            // 2. Dinamična ukrivljena puščica naslednjega zavoja na cestišču
+            if let maneuverAnnot = annotation as? CurvedManeuverAnnotation {
+                let identifier = "CurvedTurnArrowMarker"
+                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? CurvedManeuverAnnotationView
                 if view == nil {
-                    view = RouteManeuverAnnotationView(annotation: maneuverAnnot, reuseIdentifier: identifier)
+                    view = CurvedManeuverAnnotationView(annotation: maneuverAnnot, reuseIdentifier: identifier)
                 } else {
                     view?.annotation = maneuverAnnot
-                    view?.updateIcon()
                 }
+                view?.configure(with: maneuverAnnot, mapHeading: mapView.camera.heading)
+                self.currentManeuverView = view
                 return view
             }
             
@@ -535,4 +639,24 @@ struct CustomMapView: UIViewRepresentable {
             }
         }
     }
+}
+
+// MARK: - Geometrijske pomožne funkcije za smeri in razdalje
+private func calculateBearing(from start: CLLocationCoordinate2D, to dest: CLLocationCoordinate2D) -> Double {
+    let lat1 = start.latitude * .pi / 180.0
+    let lon1 = start.longitude * .pi / 180.0
+    let lat2 = dest.latitude * .pi / 180.0
+    let lon2 = dest.longitude * .pi / 180.0
+    
+    let dLon = lon2 - lon1
+    let y = sin(dLon) * cos(lat2)
+    let x = cos(lat1) * sin(lat2) - sin(lat1) * cos(lat2) * cos(dLon)
+    let radians = atan2(y, x)
+    return (radians * 180.0 / .pi + 360.0).truncatingRemainder(dividingBy: 360.0)
+}
+
+private func distanceBetween(_ c1: CLLocationCoordinate2D, _ c2: CLLocationCoordinate2D) -> Double {
+    let loc1 = CLLocation(latitude: c1.latitude, longitude: c1.longitude)
+    let loc2 = CLLocation(latitude: c2.latitude, longitude: c2.longitude)
+    return loc1.distance(from: loc2)
 }

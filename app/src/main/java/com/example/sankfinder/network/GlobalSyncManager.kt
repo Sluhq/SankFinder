@@ -92,13 +92,19 @@ object GlobalSyncManager {
         }
     }
 
+    private val hosts = listOf(
+        Pair("sankfinder.sluga.me", true),
+        Pair("192.168.200.209:8080", false)
+    )
+    private var currentHostIndex = 0
+
     private fun startSyncLoop() {
         scope.launch {
             while (true) {
                 if (activeWebSocket == null) {
                     connect()
                 }
-                delay(12000)
+                delay(6000)
             }
         }
     }
@@ -110,14 +116,15 @@ object GlobalSyncManager {
         val os = "Android ${Build.VERSION.RELEASE}"
         val encodedOs = URLEncoder.encode(os, "UTF-8")
 
-        // Uporaba uradne SSL domene z zaščito pred Cloudflare 1010
-        val url = "wss://sankfinder.sluga.me/ws?clientType=app&deviceId=$deviceId&model=$encodedModel&os=$encodedOs&screen=$encodedScreen&version=1.0"
+        val hostInfo = hosts[currentHostIndex]
+        val scheme = if (hostInfo.second) "wss" else "ws"
+        val url = "$scheme://${hostInfo.first}/ws?clientType=app&deviceId=$deviceId&model=$encodedModel&os=$encodedOs&screen=$encodedScreen&version=1.0"
         val request = Request.Builder().url(url).build()
 
         try {
             activeWebSocket = NetworkClient.webSocketOkHttpClient.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
-                    Log.d(TAG, "Global WebSocket uspešno povezan z nadzorno ploščo!")
+                    Log.d(TAG, "Global WebSocket uspešno povezan z nadzorno ploščo prek ${hostInfo.first}!")
                     _isConnected.value = true
                 }
 
@@ -132,15 +139,18 @@ object GlobalSyncManager {
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    Log.w(TAG, "Global WebSocket začasna prekinitev: ${t.message}")
+                    Log.w(TAG, "Global WebSocket začasna prekinitev na ${hostInfo.first}: ${t.message}")
                     _isConnected.value = false
                     activeWebSocket = null
+                    // Preklopi na rezervnega gostitelja
+                    currentHostIndex = (currentHostIndex + 1) % hosts.size
                 }
             })
         } catch (e: Exception) {
-            Log.e(TAG, "Napaka pri vzpostavitvi povezave: ${e.message}")
+            Log.e(TAG, "Napaka pri vzpostavitvi povezave na ${hostInfo.first}: ${e.message}")
             activeWebSocket = null
             _isConnected.value = false
+            currentHostIndex = (currentHostIndex + 1) % hosts.size
         }
     }
 

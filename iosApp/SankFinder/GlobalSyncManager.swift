@@ -1,11 +1,19 @@
 import Foundation
 import UIKit
+import UserNotifications
 
-class GlobalSyncManager: ObservableObject {
+struct PushEvent: Identifiable {
+    let id: String
+    let title: String
+    let message: String
+}
+
+class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = GlobalSyncManager()
     
     @Published var isConnected: Bool = false
     @Published var lastAnnouncement: String?
+    @Published var activePushAlert: PushEvent?
     @Published var motd: String?
     
     private var webSocketTask: URLSessionWebSocketTask?
@@ -73,10 +81,27 @@ class GlobalSyncManager: ObservableObject {
         return "Apple \(UIDevice.current.model)"
     }
     
-    init() {}
+    override init() {
+        super.init()
+    }
     
     func start() {
+        UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+            if let error = error {
+                print("Dovoljenje za obvestila na iOS: \(error.localizedDescription)")
+            }
+        }
         connect()
+    }
+    
+    // Zagotovi, da se potisna obvestila prikažejo tudi ko je aplikacija v ospredju
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        if #available(iOS 14.0, *) {
+            completionHandler([.banner, .sound, .badge, .list])
+        } else {
+            completionHandler([.alert, .sound, .badge])
+        }
     }
     
     func reportScreen(_ screen: String) {
@@ -155,9 +180,24 @@ class GlobalSyncManager: ObservableObject {
         let type = json["type"] as? String ?? ""
         DispatchQueue.main.async {
             if type == "global_push" || type == "push_notification" {
-                let title = json["title"] as? String ?? "Obvestilo"
+                let title = json["title"] as? String ?? "ŠankFinder Obvestilo"
                 let msg = json["message"] as? String ?? ""
+                let notifId = "\(json["id"] ?? UUID().uuidString)"
+                
                 self.lastAnnouncement = "\(title): \(msg)"
+                self.activePushAlert = PushEvent(id: notifId, title: title, message: msg)
+                
+                // 1. Prikaži pravo sistemsko iOS obvestilo v notification centru
+                let content = UNMutableNotificationContent()
+                content.title = title
+                content.body = msg
+                content.sound = .default
+                let request = UNNotificationRequest(identifier: notifId, content: content, trigger: nil)
+                UNUserNotificationCenter.current().add(request) { error in
+                    if let err = error {
+                        print("Napaka pri prikazu iOS obvestila: \(err.localizedDescription)")
+                    }
+                }
             } else if type == "motd" {
                 self.motd = json["message"] as? String
             }

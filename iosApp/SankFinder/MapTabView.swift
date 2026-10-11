@@ -17,6 +17,7 @@ struct MapTabView: View {
     @State private var searchRadius: Int = 1000 // 1 km
     @State private var errorMessage: String?
     @State private var showAddedToHistoryAlert: Bool = false
+    @State private var showSquadSheet: Bool = false
     
     var body: some View {
         ZStack {
@@ -29,6 +30,7 @@ struct MapTabView: View {
                 selectedLokal: selectedBar,
                 routeCoordinates: activeRoute?.coordinates ?? [],
                 routeSteps: activeRoute?.legs?.first?.steps ?? [],
+                currentStepIndex: currentStepIndex,
                 onSelectLokal: { bar in
                     selectedBar = bar
                 }
@@ -38,9 +40,29 @@ struct MapTabView: View {
             // 2. KONTROLE IN ZGORNJI / SPODNJI HUD
             VStack(spacing: 8) {
                 if let route = activeRoute, let target = selectedBar ?? bridge.targetLokalForNavigation {
-                    // Turn-by-Turn Zgornji Zeleni HUD (#1B5E20 / Google Maps slog)
-                    navigationTurnHud(route: route)
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                    // Turn-by-Turn Zgornji Zeleni HUD z možnostjo hitrega skoka v klapo
+                    VStack(alignment: .leading, spacing: 6) {
+                        navigationTurnHud(route: route)
+                        if let room = squad.activeRoom {
+                            Button(action: { showSquadSheet = true }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                                        .font(.caption)
+                                    Text("Klapa: \(room.code) (\(squad.members.count))")
+                                        .font(.caption)
+                                        .fontWeight(.bold)
+                                }
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 11)
+                                .padding(.vertical, 6)
+                                .background(Color.beerGold)
+                                .clipShape(Capsule())
+                                .shadow(color: .black.opacity(0.4), radius: 4)
+                            }
+                            .padding(.leading, 18)
+                        }
+                    }
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 } else {
                     topControlsBar
                 }
@@ -125,11 +147,35 @@ struct MapTabView: View {
         .alert(isPresented: $showAddedToHistoryAlert) {
             Alert(title: Text("Obisk zabeležen"), message: Text("Lokal je bil dodan v tvojo Zgodovino obiskov."), dismissButton: .default(Text("V redu")))
         }
+        .sheet(isPresented: $showSquadSheet) {
+            SquadView()
+        }
     }
     
     // MARK: - Zgornja vrstica brez oznake 'ŠankFinder' in brez emojijev
     private var topControlsBar: some View {
         HStack {
+            // Oblak Klape levo zgoraj za takojšnji skok v pogovor (kot na Androidu)
+            if let room = squad.activeRoom {
+                Button(action: { showSquadSheet = true }) {
+                    HStack(spacing: 7) {
+                        Image(systemName: "bubble.left.and.bubble.right.fill")
+                            .font(.subheadline)
+                        Text("Klapa: \(room.code) (\(squad.members.count))")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                    }
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 13)
+                    .padding(.vertical, 8)
+                    .background(Color.beerGold)
+                    .clipShape(Capsule())
+                    .shadow(color: .black.opacity(0.4), radius: 5)
+                }
+            } else {
+                Spacer().frame(width: 1)
+            }
+            
             Spacer()
             
             Menu {
