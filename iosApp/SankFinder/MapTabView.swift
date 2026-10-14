@@ -19,7 +19,7 @@ struct MapTabView: View {
     @State private var selectedBar: Lokal?
     @State private var activeRoute: OsrmRoute?
     @State private var currentStepIndex: Int = 0
-    @AppStorage("defaultRadiusKm") private var selectedRadiusKm: Int = 2
+    @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var showAddedToHistoryAlert: Bool = false
     @State private var showSquadSheet: Bool = false
