@@ -486,13 +486,12 @@ struct MapTabView: View {
     }
     
     private func updateLiveNavigation(userLocation: CLLocationCoordinate2D, route: OsrmRoute, target: Lokal) {
-        let step = (route.steps.indices.contains(currentStepIndex)) ? route.steps[currentStepIndex] : nil
-        let instruction = step?.maneuver.instruction ?? "Nadaljuj po poti do šanka"
-        let stepDist = step?.distance ?? 50.0
+        let steps = route.legs?.first?.steps ?? []
+        let currentStep = (steps.indices.contains(currentStepIndex)) ? steps[currentStepIndex] : steps.first
+        let instruction = currentStep?.maneuver?.instructionText ?? "Nadaljujte naravnost"
+        let stepDist = currentStep?.distance ?? 50.0
         
-        let userCLLocation = CLLocation(latitude: userLocation.latitude, longitude: userLocation.longitude)
-        let destCLLocation = CLLocation(latitude: target.latitude, longitude: target.longitude)
-        let remaining = userCLLocation.distance(from: destCLLocation)
+        let remaining = target.distance(from: userLocation) ?? route.distance
         let eta = calculateEta(durationSeconds: max(30, remaining / 1.3))
         
         LiveNavigationManager.shared.updateNavigation(
