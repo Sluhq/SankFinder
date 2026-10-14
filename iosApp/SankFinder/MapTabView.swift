@@ -42,7 +42,7 @@ struct MapTabView: View {
             
             // 2. KONTROLE IN ZGORNJI / SPODNJI HUD
             VStack(spacing: 8) {
-                if let route = activeRoute, let target = selectedBar ?? bridge.targetLokalForNavigation {
+                if let route = activeRoute, let _ = selectedBar ?? bridge.targetLokalForNavigation {
                     // Turn-by-Turn Zgornji Zeleni HUD z možnostjo hitrega skoka v klapo
                     VStack(alignment: .leading, spacing: 6) {
                         navigationTurnHud(route: route)

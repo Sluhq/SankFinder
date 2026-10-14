@@ -35,7 +35,7 @@ struct HistoryView: View {
                             .font(.system(size: 18, weight: .bold))
                             .foregroundColor(Theme.beerGold)
                     }
-                }
+                })
                 
                 ScrollView {
                     VStack(spacing: 14) {

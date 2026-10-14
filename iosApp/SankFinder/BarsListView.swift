@@ -35,7 +35,7 @@ struct BarsListView: View {
             
             VStack(spacing: 0) {
                 // 1. MATERIAL 3 TOP APP BAR (Identičen Androidu)
-                MaterialTopAppBar(title: "Lokali v bližini") {
+                MaterialTopAppBar(title: "Lokali v bližini", actions: {
                     Button(action: { bridge.selectedTab = 2 }) {
                         Image(systemName: "map.fill")
                             .font(.system(size: 18))
@@ -47,7 +47,7 @@ struct BarsListView: View {
                             .font(.system(size: 18))
                             .foregroundColor(Theme.beerGold)
                     }
-                }
+                })
                 
                 // 2. ISKALNO POLJE IN SUBHEADER
                 VStack(spacing: 6) {
