@@ -53,6 +53,8 @@ struct SquadView: View {
                 }
             }
         }
+        .simultaneousGesture(TapGesture().onEnded { hideKeyboard() })
+        .doneButtonKeyboardToolbar()
         .onAppear {
             GlobalSyncManager.shared.reportScreen("Pivska Klapa")
             nicknameInput = squad.myUserName
@@ -306,6 +308,7 @@ struct SquadView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, 4)
                 }
+                .scrollDismissesKeyboard(.interactively)
                 .onChange(of: squad.messages.count) { _ in
                     if let last = squad.messages.last {
                         withAnimation {

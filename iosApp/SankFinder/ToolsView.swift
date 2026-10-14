@@ -118,8 +118,11 @@ struct ToolsView: View {
                     }
                     .padding(.bottom, 80) // Prostor za BottomNavBar
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
+        .simultaneousGesture(TapGesture().onEnded { hideKeyboard() })
+        .doneButtonKeyboardToolbar()
         .sheet(isPresented: $showSquadSheet) {
             SquadView()
         }
@@ -480,16 +483,12 @@ struct ToolsView: View {
                         .foregroundColor(Theme.beerGold)
                 }
                 
-                // 3. Rdeči kazalec na vrhu (kaže točno na zmagovalca)
-                VStack {
-                    Image(systemName: "arrowtriangle.down.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(Theme.drajvRed)
-                        .shadow(color: .black.opacity(0.7), radius: 3, y: 2)
-                        .offset(y: -((wheelSize / 2.0) + 8))
-                    Spacer()
-                }
-                .frame(height: wheelSize)
+                // 3. Rdeči kazalec na vrhu (kaže točno na rob kolesa)
+                Image(systemName: "arrowtriangle.down.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(Theme.drajvRed)
+                    .shadow(color: .black.opacity(0.85), radius: 3, y: 1)
+                    .offset(y: -(wheelSize / 2.0) + 4)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 14)

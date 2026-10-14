@@ -52,3 +52,22 @@ extension Color {
     static let appText = Theme.textLight
     static let appMuted = Theme.textMuted
 }
+
+extension View {
+    func hideKeyboard() {
+        UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+    
+    func doneButtonKeyboardToolbar() -> some View {
+        self.toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("Končano") {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                }
+                .font(.system(size: 15, weight: .bold))
+                .foregroundColor(Theme.beerGold)
+            }
+        }
+    }
+}

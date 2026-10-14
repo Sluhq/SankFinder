@@ -61,8 +61,11 @@ struct HistoryView: View {
                     .padding(.top, 12)
                     .padding(.bottom, 80)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
+        .simultaneousGesture(TapGesture().onEnded { hideKeyboard() })
+        .doneButtonKeyboardToolbar()
         .sheet(isPresented: $showScannerModal) {
             CameraReceiptScannerModalView(onScanned: { name, addr, amt, note, drinks in
                 history.addVisit(barName: name, address: addr, amount: amt, rating: 5, note: note, drinks: drinks)
@@ -390,8 +393,11 @@ struct HistoryView: View {
                     }
                     .padding(16)
                 }
+                .scrollDismissesKeyboard(.interactively)
             }
         }
+        .simultaneousGesture(TapGesture().onEnded { hideKeyboard() })
+        .doneButtonKeyboardToolbar()
     }
     
     private func resetInputFields() {

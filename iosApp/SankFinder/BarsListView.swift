@@ -150,6 +150,7 @@ struct BarsListView: View {
                         .padding(.top, 6)
                         .padding(.bottom, 80) // Prostor za BottomNavBar
                     }
+                    .scrollDismissesKeyboard(.interactively)
                 }
             }
             
@@ -171,6 +172,8 @@ struct BarsListView: View {
                 .transition(.opacity)
             }
         }
+        .simultaneousGesture(TapGesture().onEnded { hideKeyboard() })
+        .doneButtonKeyboardToolbar()
         .onAppear {
             GlobalSyncManager.shared.reportScreen("Seznam lokalov")
             locationManager.requestPermission()

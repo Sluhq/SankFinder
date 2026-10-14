@@ -437,6 +437,7 @@ struct CustomMapView: UIViewRepresentable {
     }
     
     func updateUIView(_ uiView: MKMapView, context: Context) {
+        context.coordinator.parent = self
         context.coordinator.currentUserView?.updateHeading(userHeading)
         
         // Sproži osredotočenje kamere ob klicu centerTrigger ali ko se spremeni centerCoordinate
@@ -529,6 +530,15 @@ struct CustomMapView: UIViewRepresentable {
             uiView.removeAnnotations(existingLokalAnnotations)
             let newAnnotations = bars.map { LokalAnnotation(lokal: $0) }
             uiView.addAnnotations(newAnnotations)
+        }
+        
+        // 3.1 Posodobitev stanja izbire označevalcev (ko se zapre ali zamenja lokal)
+        for annot in uiView.annotations {
+            if let lokalAnnot = annot as? LokalAnnotation,
+               let dotView = uiView.view(for: lokalAnnot) as? PubDotAnnotationView {
+                let isSelected = (selectedLokal != nil && selectedLokal?.id == lokalAnnot.lokal.id)
+                dotView.setSelectedState(isSelected)
+            }
         }
         
         // 4. Posodobitev prijateljev iz Pivske Klape
@@ -642,7 +652,13 @@ struct CustomMapView: UIViewRepresentable {
             mapView.deselectAnnotation(view.annotation, animated: false)
             
             if let annot = view.annotation as? LokalAnnotation {
-                (view as? PubDotAnnotationView)?.setSelectedState(true)
+                for other in mapView.annotations {
+                    if let otherLokal = other as? LokalAnnotation,
+                       let otherView = mapView.view(for: otherLokal) as? PubDotAnnotationView {
+                        let isThis = (otherLokal.lokal.id == annot.lokal.id)
+                        otherView.setSelectedState(isThis)
+                    }
+                }
                 parent.onSelectLokal(annot.lokal)
             }
         }
