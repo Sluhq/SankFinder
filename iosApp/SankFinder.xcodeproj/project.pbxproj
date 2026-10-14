@@ -28,6 +28,9 @@
 		C10000000000000000000014 /* HistoryManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000014 /* HistoryManager.swift */; };
 		C10000000000000000000015 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000015 /* HistoryView.swift */; };
 		C10000000000000000000016 /* MaterialComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000016 /* MaterialComponents.swift */; };
+		C10000000000000000000017 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000017 /* Assets.xcassets */; };
+		C10000000000000000000018 /* LiveNavigationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* LiveNavigationManager.swift */; };
+		C10000000000000000000019 /* WatchConnectivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* WatchConnectivityManager.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -54,6 +57,9 @@
 		B10000000000000000000014 /* HistoryManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryManager.swift; sourceTree = "<group>"; };
 		B10000000000000000000015 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		B10000000000000000000016 /* MaterialComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaterialComponents.swift; sourceTree = "<group>"; };
+		B10000000000000000000017 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B10000000000000000000018 /* LiveNavigationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNavigationManager.swift; sourceTree = "<group>"; };
+		B10000000000000000000019 /* WatchConnectivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityManager.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,6 +106,9 @@
 				B10000000000000000000014 /* HistoryManager.swift */,
 				B10000000000000000000015 /* HistoryView.swift */,
 				B10000000000000000000016 /* MaterialComponents.swift */,
+				B10000000000000000000017 /* Assets.xcassets */,
+				B10000000000000000000018 /* LiveNavigationManager.swift */,
+				B10000000000000000000019 /* WatchConnectivityManager.swift */,
 			);
 			path = SankFinder;
 			sourceTree = "<group>";
@@ -170,6 +179,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C10000000000000000000017 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -201,6 +211,8 @@
 				C10000000000000000000014 /* HistoryManager.swift in Sources */,
 				C10000000000000000000015 /* HistoryView.swift in Sources */,
 				C10000000000000000000016 /* MaterialComponents.swift in Sources */,
+				C10000000000000000000018 /* LiveNavigationManager.swift in Sources */,
+				C10000000000000000000019 /* WatchConnectivityManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

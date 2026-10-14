@@ -169,6 +169,11 @@ struct MapTabView: View {
                     centerTrigger = UUID()
                     refreshBars()
                 }
+                
+                // Posodobi Live Lock Screen obvestilo in Apple Watch prikaz
+                if let route = activeRoute, let target = selectedBar ?? bridge.targetLokalForNavigation {
+                    updateLiveNavigation(userLocation: loc, route: route, target: target)
+                }
             }
         }
         .alert(isPresented: $showAddedToHistoryAlert) {
@@ -306,7 +311,12 @@ struct MapTabView: View {
             
             Spacer()
             
-            Button(action: { activeRoute = nil; selectedBar = nil }) {
+            Button(action: {
+                activeRoute = nil
+                selectedBar = nil
+                locationManager.setBackgroundMode(active: false)
+                LiveNavigationManager.shared.stopNavigation()
+            }) {
                 Text("Končaj")
                     .font(.subheadline)
                     .fontWeight(.bold)
@@ -458,6 +468,13 @@ struct MapTabView: View {
                     self.activeRoute = route
                     self.currentStepIndex = 0
                     self.isLoading = false
+                    self.locationManager.setBackgroundMode(active: true)
+                    let eta = self.calculateEta(durationSeconds: route.duration)
+                    LiveNavigationManager.shared.startNavigation(
+                        targetName: bar.name,
+                        totalDistance: route.distance,
+                        etaFormatted: eta
+                    )
                 }
             } catch {
                 DispatchQueue.main.async {
@@ -466,6 +483,25 @@ struct MapTabView: View {
                 }
             }
         }
+    }
+    
+    private func updateLiveNavigation(userLocation: CLLocationCoordinate2D, route: OsrmRoute, target: Lokal) {
+        let step = (route.steps.indices.contains(currentStepIndex)) ? route.steps[currentStepIndex] : nil
+        let instruction = step?.maneuver.instruction ?? "Nadaljuj po poti do šanka"
+        let stepDist = step?.distance ?? 50.0
+        
+        let userCLLocation = CLLocation(latitude: userLocation.latitude, longitude: userLocation.longitude)
+        let destCLLocation = CLLocation(latitude: target.latitude, longitude: target.longitude)
+        let remaining = userCLLocation.distance(from: destCLLocation)
+        let eta = calculateEta(durationSeconds: max(30, remaining / 1.3))
+        
+        LiveNavigationManager.shared.updateNavigation(
+            targetName: target.name,
+            maneuverInstruction: instruction,
+            distanceToManeuver: stepDist,
+            remainingDistance: remaining,
+            etaFormatted: eta
+        )
     }
     
     private func maneuverIcon(modifier: String?) -> String {

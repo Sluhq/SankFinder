@@ -41,6 +41,22 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         }
     }
     
+    /// Omogoča neprekinjeno spremljanje lokacije v ozadju med peš navigacijo
+    func setBackgroundMode(active: Bool) {
+        if active {
+            // Pred vklopom preveri, da je na voljo dovoljenje
+            if manager.authorizationStatus == .authorizedWhenInUse || manager.authorizationStatus == .authorizedAlways {
+                manager.allowsBackgroundLocationUpdates = true
+                manager.showsBackgroundLocationIndicator = true
+                manager.pausesLocationUpdatesAutomatically = false
+            }
+        } else {
+            manager.allowsBackgroundLocationUpdates = false
+            manager.showsBackgroundLocationIndicator = false
+            manager.pausesLocationUpdatesAutomatically = true
+        }
+    }
+    
     // MARK: - CLLocationManagerDelegate
     
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
