@@ -8,6 +8,10 @@ struct MapTabView: View {
     @ObservedObject private var history = HistoryManager.shared
     @ObservedObject private var squad = SquadManager.shared
     
+    @AppStorage("defaultRadiusKm") private var selectedRadiusKm: Int = 2
+    @AppStorage("lokalLimit") private var selectedLokalLimit: Int = 25
+    @State private var mapHeading: Double = 0.0
+    @State private var resetHeadingTrigger: UUID = UUID()
     @State private var centerCoord: CLLocationCoordinate2D?
     @State private var centerTrigger: UUID = UUID()
     @State private var hasInitialCenteredOnUser: Bool = false
@@ -16,7 +20,7 @@ struct MapTabView: View {
     @State private var activeRoute: OsrmRoute?
     @State private var currentStepIndex: Int = 0
     @State private var isLoading: Bool = false
-    @State private var searchRadius: Int = 1000 // 1 km
+    @State private var searchRadius: Int = 2000 // 2 km privzeto kot Android
     @State private var errorMessage: String?
     @State private var showAddedToHistoryAlert: Bool = false
     @State private var showSquadSheet: Bool = false
@@ -28,6 +32,8 @@ struct MapTabView: View {
                 centerCoordinate: $centerCoord,
                 centerTrigger: centerTrigger,
                 userHeading: locationManager.heading,
+                mapHeading: $mapHeading,
+                resetHeadingTrigger: resetHeadingTrigger,
                 bars: bars,
                 squadMembers: squad.members,
                 selectedLokal: selectedBar,
@@ -47,11 +53,12 @@ struct MapTabView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         navigationTurnHud(route: route)
                         if let room = squad.activeRoom {
+                            let squadBeers = squad.members.map { $0.drinksCount }.reduce(0, +)
                             Button(action: { showSquadSheet = true }) {
                                 HStack(spacing: 6) {
                                     Image(systemName: "bubble.left.and.bubble.right.fill")
                                         .font(.caption)
-                                    Text("Klapa: \(room.code) (\(squad.members.count))")
+                                    Text("Klapa: \(room.code) (\(squad.members.count)) • \(squadBeers) piv")
                                         .font(.caption)
                                         .fontWeight(.bold)
                                 }
@@ -72,10 +79,25 @@ struct MapTabView: View {
                 
                 Spacer()
                 
-                // Desni kontrolni stolpec (Moja Lokacija, Osveži)
+                // Desni kontrolni stolpec (Plavajoči kompas, Moja Lokacija, Osveži)
                 HStack {
                     Spacer()
                     VStack(spacing: 12) {
+                        // Plavajoči kompas (prikaže se ko je karta zasukana, tap poravna sever)
+                        if abs(mapHeading) > 5.0 && abs(mapHeading - 360.0) > 5.0 {
+                            Button(action: { resetHeadingTrigger = UUID() }) {
+                                Image(systemName: "location.north.line.fill")
+                                    .font(.title3)
+                                    .foregroundColor(Theme.drajvRed)
+                                    .frame(width: 46, height: 46)
+                                    .background(Theme.cardDark)
+                                    .clipShape(Circle())
+                                    .shadow(color: .black.opacity(0.4), radius: 4)
+                                    .rotationEffect(.degrees(-mapHeading))
+                            }
+                            .transition(.scale.combined(with: .opacity))
+                        }
+                        
                         Button(action: centerOnUser) {
                             Image(systemName: "location.fill")
                                 .font(.title3)
@@ -189,11 +211,12 @@ struct MapTabView: View {
         HStack {
             // Oblak Klape levo zgoraj za takojšnji skok v pogovor (kot na Androidu)
             if let room = squad.activeRoom {
+                let squadBeers = squad.members.map { $0.drinksCount }.reduce(0, +)
                 Button(action: { showSquadSheet = true }) {
                     HStack(spacing: 7) {
                         Image(systemName: "bubble.left.and.bubble.right.fill")
                             .font(.subheadline)
-                        Text("Klapa: \(room.code) (\(squad.members.count))")
+                        Text("Klapa: \(room.code) (\(squad.members.count)) • \(squadBeers) piv")
                             .font(.subheadline)
                             .fontWeight(.bold)
                     }
@@ -211,14 +234,14 @@ struct MapTabView: View {
             Spacer()
             
             Menu {
-                Button("500 m") { searchRadius = 500; refreshBars() }
-                Button("1 km (Privzeto)") { searchRadius = 1000; refreshBars() }
-                Button("2 km") { searchRadius = 2000; refreshBars() }
+                Button("1 km") { searchRadius = 1000; refreshBars() }
+                Button("2 km (Privzeto)") { searchRadius = 2000; refreshBars() }
+                Button("3 km") { searchRadius = 3000; refreshBars() }
                 Button("5 km") { searchRadius = 5000; refreshBars() }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "slider.horizontal.3")
-                    Text("\(searchRadius < 1000 ? "\(searchRadius) m" : "\(searchRadius/1000) km")")
+                    Text("\(searchRadius / 1000) km")
                 }
                 .font(.subheadline)
                 .fontWeight(.semibold)
@@ -441,7 +464,7 @@ struct MapTabView: View {
                     lat: userPos.latitude,
                     lon: userPos.longitude,
                     radius: searchRadius,
-                    limit: 35
+                    limit: selectedLokalLimit
                 )
                 DispatchQueue.main.async {
                     self.bars = fetched
@@ -487,12 +510,47 @@ struct MapTabView: View {
     
     private func updateLiveNavigation(userLocation: CLLocationCoordinate2D, route: OsrmRoute, target: Lokal) {
         let steps = route.legs?.first?.steps ?? []
+        guard !steps.isEmpty else { return }
+        
+        // 1. Dinamično napredovanje naslednjega koraka ob približanju ovinku (< 18m)
+        let nextIdx = currentStepIndex + 1
+        if nextIdx < steps.count {
+            let nextStep = steps[nextIdx]
+            if let loc = nextStep.maneuver?.location, loc.count >= 2 {
+                let maneuverCoord = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
+                let distToManeuver = distanceBetweenCoords(userLocation, maneuverCoord)
+                
+                var shouldAdvance = distToManeuver <= 18.0
+                if !shouldAdvance && nextIdx + 1 < steps.count {
+                    if let nextNextLoc = steps[nextIdx + 1].maneuver?.location, nextNextLoc.count >= 2 {
+                        let nextNextCoord = CLLocationCoordinate2D(latitude: nextNextLoc[1], longitude: nextNextLoc[0])
+                        let distToNextNext = distanceBetweenCoords(userLocation, nextNextCoord)
+                        if distToNextNext < nextStep.distance * 0.85 && distToManeuver < 35.0 {
+                            shouldAdvance = true
+                        }
+                    }
+                }
+                if shouldAdvance {
+                    self.currentStepIndex = nextIdx
+                }
+            }
+        }
+        
         let currentStep = (steps.indices.contains(currentStepIndex)) ? steps[currentStepIndex] : steps.first
         let instruction = currentStep?.maneuver?.instructionText ?? "Nadaljujte naravnost"
-        let stepDist = currentStep?.distance ?? 50.0
         
-        let remaining = target.distance(from: userLocation) ?? route.distance
-        let eta = calculateEta(durationSeconds: max(30, remaining / 1.3))
+        // 2. Izračun točne razdalje do naslednjega manevra
+        let stepDist: Double
+        if let loc = currentStep?.maneuver?.location, loc.count >= 2 {
+            let targetManeuver = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
+            stepDist = distanceBetweenCoords(userLocation, targetManeuver)
+        } else {
+            stepDist = currentStep?.distance ?? 50.0
+        }
+        
+        // 3. Točen izračun preostale razdalje po dejanski OSRM trasi
+        let remaining = calculateRemainingRouteDistance(userLoc: userLocation, routeCoords: route.coordinates)
+        let eta = calculateEta(durationSeconds: max(30, remaining / 1.25))
         
         LiveNavigationManager.shared.updateNavigation(
             targetName: target.name,
@@ -501,6 +559,30 @@ struct MapTabView: View {
             remainingDistance: remaining,
             etaFormatted: eta
         )
+    }
+
+    private func calculateRemainingRouteDistance(userLoc: CLLocationCoordinate2D, routeCoords: [CLLocationCoordinate2D]) -> Double {
+        guard routeCoords.count >= 2 else { return 0.0 }
+        var closestIdx = 0
+        var minD = Double.greatestFiniteMagnitude
+        for (i, pt) in routeCoords.enumerated() {
+            let d = distanceBetweenCoords(userLoc, pt)
+            if d < minD {
+                minD = d
+                closestIdx = i
+            }
+        }
+        var remaining: Double = minD
+        for i in closestIdx..<(routeCoords.count - 1) {
+            remaining += distanceBetweenCoords(routeCoords[i], routeCoords[i + 1])
+        }
+        return remaining
+    }
+
+    private func distanceBetweenCoords(_ c1: CLLocationCoordinate2D, _ c2: CLLocationCoordinate2D) -> Double {
+        let loc1 = CLLocation(latitude: c1.latitude, longitude: c1.longitude)
+        let loc2 = CLLocation(latitude: c2.latitude, longitude: c2.longitude)
+        return loc1.distance(from: loc2)
     }
     
     private func maneuverIcon(modifier: String?) -> String {

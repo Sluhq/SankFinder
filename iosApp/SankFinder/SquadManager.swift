@@ -414,6 +414,16 @@ class SquadManager: ObservableObject {
         sendJson(payload)
     }
     
+    func decrementDrink() {
+        guard myDrinksCount > 0 else { return }
+        myDrinksCount -= 1
+        let payload: [String: Any] = [
+            "type": "drink_update",
+            "delta": -1
+        ]
+        sendJson(payload)
+    }
+    
     func updateLocation(lat: Double, lon: Double, speed: Float = 0.0) {
         let payload: [String: Any] = [
             "type": "location_update",

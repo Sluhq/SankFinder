@@ -144,7 +144,7 @@ Navigacija je centralizirana v [AppNavHost.kt](file:///c:/Android/SankFinder/app
 - **Delovanje:**
   1. Uporabnik izbere lokal (na zemljevidu ali v seznamu) in pritisne **"Navigiraj"**.
   2. `MapNavigationViewModel.calculateRoute()` pošlje koordinati uporabnika in cilja na primarni OSRM strežnik (`https://sankfinder.sluga.me/`). Če ta vrne napako (npr. HTTP 530 ali omrežno napako), aplikacija samodejno preklopi na rezervni OSRM (`https://routing.openstreetmap.de/`).
-  3. Pot se izriše kot debela modra linija z zunanjo temno obrobo (casing) za optimalno vidljivost na svetli in temni podlagi.
+  3. Pot se izriše kot debela smaragdno zelena linija (`#0F9D58`) z zunanjo belo obrobo (casing) za optimalno vidljivost na svetli in temni podlagi (enako kot na iOS in usklajeno s smernimi puščicami).
   4. Na vsakem ovinku se prikaže usmerjevalna puščica s točno razdaljo do naslednjega manevra. Ko je uporabnik manj kot 18 m od točke manevra (ali bližje naslednjemu segmentu), se korak nemudoma posodobi brez zatikanja.
   5. Ob rotaciji zemljevida se prikaže plavajoči kompas, ki s klikom poravna zemljevid nazaj proti severu.
 
@@ -202,12 +202,19 @@ Navigacija je centralizirana v [AppNavHost.kt](file:///c:/Android/SankFinder/app
   1. **Ustvarjanje / Vstop v klapo & Dvojna povezljivost:**
      - Aplikacija samodejno poskusi varno javno domeno `https://sankfinder.sluga.me` (s podporo za `wss://`), ob nedosegljivosti pa neopazno preklopi na neposredni lokalni naslov `192.168.200.209:8080`.
      - **Varnostna sanitizacija napak:** Ob napaki v omrežju se v uporabniškem vmesniku **nikoli** ne prikažejo surovi IP naslovi, vrata ali sistemske izjeme (npr. `ConnectException`), temveč prijazno obvestilo: *"Povezava s strežnikom ni uspela. Preveri internetno povezavo ali poskusi znova."*
-  2. **Live Radar na zemljevidu:** Ko je klapa aktivna, se na [MapMainPage.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/MapMainPage.kt) v realnem času izrišejo zlati označevalci prijateljev z njihovo začetnico, imenom in številom pijač. Koordinate se samodejno sinhronizirajo vsakih 6 sekund.
-  3. **Runda Tracker (Števec pijač):** Skupni seštevek popitih pijač celotne klape. Vsak član ima gumba `+` in `-`, vsi v živo vidijo, kdo vodi in kdo je naslednji na vrsti za častit rundo.
-  4. **Real-time Chat s hitrimi gumbi:** Takojšnje pošiljanje besedilnih sporočil prek WebSockets ter hitri gumbi z enim dotikom (*Naročil sem rundo!*, *Kdo gre na hrano?*, *Pridem čez 5 min*, *Kje točno sedite?*).
-  5. **Varnostno potrditveno okno ob zapuščanju klape:** Klik na gumb za izhod odpre Compose `AlertDialog` z opozorilom (*"Ali si prepričan, da želiš zapustiti to Pivsko Klapo?"*), kar prepreči nehoteno prekinitev povezave in izgubo seje.
-  6. **Izvoz & Shranjevanje klepeta (Spomini):** Gumb za deljenje v orodni vrstici sestavi celoten transkript klepeta z datumom, sporočili in končnim stanjem pijač ter ga prek Android Share Sheet-a (`Intent.ACTION_SEND`) omogoči shraniti v beležke (Keep, Notes), deliti prek sporočil (WhatsApp, Signal, SMS) ali kopirati.
-  7. **Skrita Nadzorna Plošča (Admin Dashboard):**
+  2. **Poenotena statusna vrstica:** Prečiščen in eleganten zgornji del klepeta brez gneče, z oznako sobe, številom prisotnih članov, hitrim osebnim števcem (`+` / `-`) ter gumbom za odprtje tracker podmenija.
+  3. **Pivski Tracker Klape (ModalBottomSheet podmeni):**
+     - Prikaz skupnega števila popitih piv celotne klape.
+     - Lestvica "Top pivci" s poudarkom na vodilnem članu mize.
+     - Seznam vseh udeležencev s stanjem njihovih popitih pijač.
+     - Osebni števec pijač za posodabljanje svojega stanja.
+     - Poudarjen gumb **"Jaz častim naslednjo rundo!"**, ki vsem članom pošlje runda sporočilo in sproži sistemsko heads-up obvestilo.
+  4. **Potisno obvestilo ob klicu runde:** [SankNotificationHelper.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/notifications/SankNotificationHelper.kt) ob prejemu klica runde prikaže visoko-prioritetno sistemsko obvestilo z zvočnim signalom in vibracijo (*"🍻 [Ime] časti rundo!"*), enako kot na iOS.
+  5. **Live Radar na zemljevidu:** Ko je klapa aktivna, se na [MapMainPage.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/MapMainPage.kt) v realnem času izrišejo zlati označevalci prijateljev z njihovo začetnico, imenom in številom pijač. Koordinate se samodejno sinhronizirajo vsakih 6 sekund.
+  6. **Real-time Chat s hitrimi gumbi:** Takojšnje pošiljanje besedilnih sporočil prek WebSockets ter hitri gumbi z enim dotikom (*Naročil sem rundo!*, *Kdo gre na hrano?*, *Pridem čez 5 min*, *Kje točno sedite?*).
+  7. **Varnostno potrditveno okno ob zapuščanju klape:** Klik na gumb za izhod odpre Compose `AlertDialog` z opozorilom (*"Ali si prepričan, da želiš zapustiti to Pivsko Klapo?"*), kar prepreči nehoteno prekinitev povezave in izgubo seje.
+  8. **Izvoz & Shranjevanje klepeta (Spomini):** Gumb za deljenje v orodni vrstici sestavi celoten transkript klepeta z datumom, sporočili in končnim stanjem pijač ter ga prek Android Share Sheet-a (`Intent.ACTION_SEND`) omogoči shraniti v beležke (Keep, Notes), deliti prek sporočil (WhatsApp, Signal, SMS) ali kopirati.
+  9. **Skrita Nadzorna Plošča (Admin Dashboard):**
      - Dostopna na skrivnem URL-ju: `http://192.168.200.209:8080/sank-uprava-x77` ali `https://sankfinder.sluga.me/sank-uprava-x77`.
      - Zaščitena z avtentikacijo: uporabnik `anze`, geslo `Anziajeto`.
      - **Povezani uporabniki v živo (WebSockets):** Tabela v realnem času prikazuje trenutno povezane odjemalce, njihova imena, kodo sobe, IP naslov in čas povezave.

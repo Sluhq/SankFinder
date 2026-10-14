@@ -207,6 +207,16 @@ class SquadViewModel(application: Application) : AndroidViewModel(application) {
                         createdAt = json.optString("createdAt", "")
                     )
                     _messages.value = _messages.value + msg
+
+                    if (msg.msgType == "round_call") {
+                        val sender = msg.senderName
+                        _bannerAlert.value = "$sender časti naslednjo rundo!"
+                        com.example.sankfinder.notifications.SankNotificationHelper.showRoundCallNotification(
+                            getApplication(),
+                            sender,
+                            msg.content
+                        )
+                    }
                 }
 
                 "drinks_updated" -> {

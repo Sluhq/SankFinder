@@ -294,5 +294,21 @@ object SankNotificationHelper {
             println("Globalno obvestilo ni bilo prikazano zaradi dovoljenj: ${e.message}")
         }
     }
+
+    /**
+     * Potisno obvestilo na vrhu zaslona, ko član klape pritisne gumb 'Jaz častim rundo'
+     */
+    fun showRoundCallNotification(
+        context: Context,
+        senderName: String,
+        messageText: String
+    ) {
+        showGlobalAppNotification(
+            context = context,
+            title = "Pivska Klapa: $senderName časti rundo!",
+            message = if (messageText.isNotBlank()) messageText else "Naročil sem novo rundo za celo mizo! Na zdravje!",
+            notificationId = 3030
+        )
+    }
 }
 

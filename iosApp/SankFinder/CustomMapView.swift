@@ -223,19 +223,96 @@ class PubDotAnnotationView: MKAnnotationView {
     }
 }
 
-// MARK: - Označevalec prijatelja iz Pivske Klape
+// MARK: - Označevalec prijatelja iz Pivske Klape (z imenom in številom pijač)
 class SquadFriendAnnotation: NSObject, MKAnnotation {
     let member: SquadMember
     var coordinate: CLLocationCoordinate2D {
         CLLocationCoordinate2D(latitude: member.lat ?? 46.0569, longitude: member.lon ?? 14.5058)
     }
-    // Zasebnost: prikazuje le ime brez štetja pijač
-    var title: String? { member.name }
-    var subtitle: String? { "Pivska Klapa" }
+    var title: String? { "\(member.name) (\(member.drinksCount) pijač)" }
+    var subtitle: String? { "Pivska Klapa • v živo" }
     
     init(member: SquadMember) {
         self.member = member
         super.init()
+    }
+}
+
+// MARK: - Pogled označevalca prijatelja (Zlati krog z začetnico, značko pijač in imenom - NIKOLI se ne združi v grozd)
+class SquadFriendAnnotationView: MKAnnotationView {
+    private let circleView = UIView()
+    private let initialLabel = UILabel()
+    private let drinksBadge = UIView()
+    private let drinksLabel = UILabel()
+    private let nameLabel = UILabel()
+    
+    override init(annotation: MKAnnotation?, reuseIdentifier: String?) {
+        super.init(annotation: annotation, reuseIdentifier: reuseIdentifier)
+        setupView()
+    }
+    
+    required init?(coder aDecoder: NSCoder) {
+        super.init(coder: aDecoder)
+        setupView()
+    }
+    
+    private func setupView() {
+        self.canShowCallout = true
+        self.clusteringIdentifier = nil
+        self.displayPriority = .required // Ključno: MapKit NIKOLI ne skrije ali združi prijatelja pri zoomiranju!
+        
+        self.frame = CGRect(x: 0, y: 0, width: 44, height: 50)
+        self.centerOffset = CGPoint(x: 0, y: -20)
+        
+        // Zlati krog
+        circleView.frame = CGRect(x: 6, y: 4, width: 32, height: 32)
+        circleView.backgroundColor = UIColor(red: 245/255, green: 158/255, blue: 11/255, alpha: 1.0)
+        circleView.layer.cornerRadius = 16
+        circleView.layer.borderWidth = 2.5
+        circleView.layer.borderColor = UIColor.white.cgColor
+        circleView.layer.shadowColor = UIColor.black.cgColor
+        circleView.layer.shadowOpacity = 0.35
+        circleView.layer.shadowOffset = CGSize(width: 0, height: 2)
+        circleView.layer.shadowRadius = 3
+        addSubview(circleView)
+        
+        // Začetnica
+        initialLabel.frame = circleView.bounds
+        initialLabel.textAlignment = .center
+        initialLabel.font = UIFont.systemFont(ofSize: 15, weight: .black)
+        initialLabel.textColor = UIColor.black
+        circleView.addSubview(initialLabel)
+        
+        // Značka s številom pijač (zgoraj desno)
+        drinksBadge.frame = CGRect(x: 26, y: 0, width: 18, height: 16)
+        drinksBadge.backgroundColor = UIColor(red: 18/255, green: 24/255, blue: 38/255, alpha: 0.95)
+        drinksBadge.layer.cornerRadius = 8
+        drinksBadge.layer.borderWidth = 1.0
+        drinksBadge.layer.borderColor = UIColor(red: 245/255, green: 158/255, blue: 11/255, alpha: 1.0).cgColor
+        addSubview(drinksBadge)
+        
+        drinksLabel.frame = drinksBadge.bounds
+        drinksLabel.textAlignment = .center
+        drinksLabel.font = UIFont.systemFont(ofSize: 9, weight: .bold)
+        drinksLabel.textColor = UIColor(red: 245/255, green: 158/255, blue: 11/255, alpha: 1.0)
+        drinksBadge.addSubview(drinksLabel)
+        
+        // Spodnje ime prijatelja
+        nameLabel.frame = CGRect(x: -18, y: 38, width: 80, height: 14)
+        nameLabel.textAlignment = .center
+        nameLabel.font = UIFont.systemFont(ofSize: 10, weight: .bold)
+        nameLabel.textColor = UIColor.white
+        nameLabel.layer.shadowColor = UIColor.black.cgColor
+        nameLabel.layer.shadowOpacity = 0.85
+        nameLabel.layer.shadowOffset = CGSize(width: 0, height: 1)
+        nameLabel.layer.shadowRadius = 2
+        addSubview(nameLabel)
+    }
+    
+    func configure(with member: SquadMember) {
+        initialLabel.text = String(member.name.prefix(1)).uppercased()
+        drinksLabel.text = "\(member.drinksCount)"
+        nameLabel.text = member.name
     }
 }
 
@@ -508,6 +585,8 @@ struct CustomMapView: UIViewRepresentable {
     @Binding var centerCoordinate: CLLocationCoordinate2D?
     var centerTrigger: UUID = UUID()
     var userHeading: Double = 0.0
+    @Binding var mapHeading: Double
+    var resetHeadingTrigger: UUID = UUID()
     var bars: [Lokal]
     var squadMembers: [SquadMember] = []
     var selectedLokal: Lokal?
@@ -560,6 +639,14 @@ struct CustomMapView: UIViewRepresentable {
             context.coordinator.lastCenteredId = "\(center.latitude),\(center.longitude)"
             let region = MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012))
             uiView.setRegion(region, animated: true)
+        }
+        
+        // Ponastavitev orientacije na sever (kompas gumb)
+        if context.coordinator.lastResetHeadingTrigger != resetHeadingTrigger {
+            context.coordinator.lastResetHeadingTrigger = resetHeadingTrigger
+            let cam = uiView.camera
+            let newCam = MKMapCamera(lookingAtCenter: cam.centerCoordinate, fromDistance: cam.centerCoordinateDistance, pitch: cam.pitch, heading: 0)
+            uiView.setCamera(newCam, animated: true)
         }
         
         // 1. Posodobitev navigacijske rute
@@ -651,16 +738,30 @@ struct CustomMapView: UIViewRepresentable {
             }
         }
         
-        // 4. Posodobitev prijateljev iz Pivske Klape
+        // 4. Posodobitev prijateljev iz Pivske Klape (z zaznavo premikov in števila pijač)
+        let validMembers = squadMembers.filter { $0.lat != nil && $0.lon != nil }
         let existingSquadAnnotations = uiView.annotations.compactMap { $0 as? SquadFriendAnnotation }
-        let existingSquadIds = Set(existingSquadAnnotations.map { $0.member.id })
-        let newSquadIds = Set(squadMembers.filter { $0.lat != nil && $0.lon != nil }.map { $0.id })
         
-        if existingSquadIds != newSquadIds {
+        var squadChanged = existingSquadAnnotations.count != validMembers.count
+        if !squadChanged {
+            for m in validMembers {
+                if let existing = existingSquadAnnotations.first(where: { $0.member.id == m.id }) {
+                    if existing.coordinate.latitude != (m.lat ?? 0) ||
+                       existing.coordinate.longitude != (m.lon ?? 0) ||
+                       existing.member.drinksCount != m.drinksCount {
+                        squadChanged = true
+                        break
+                    }
+                } else {
+                    squadChanged = true
+                    break
+                }
+            }
+        }
+        
+        if squadChanged {
             uiView.removeAnnotations(existingSquadAnnotations)
-            let newSquadAnnotations = squadMembers
-                .filter { $0.lat != nil && $0.lon != nil }
-                .map { SquadFriendAnnotation(member: $0) }
+            let newSquadAnnotations = validMembers.map { SquadFriendAnnotation(member: $0) }
             uiView.addAnnotations(newSquadAnnotations)
         }
     }
@@ -673,6 +774,7 @@ struct CustomMapView: UIViewRepresentable {
         var parent: CustomMapView
         var lastCenteredId: String? = nil
         var lastCenterTrigger: UUID? = nil
+        var lastResetHeadingTrigger: UUID? = nil
         var lastRouteCount: Int = 0
         weak var currentUserView: UserHeadingAnnotationView? = nil
         weak var currentManeuverView: CurvedManeuverAnnotationView? = nil
@@ -684,6 +786,11 @@ struct CustomMapView: UIViewRepresentable {
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             let heading = mapView.camera.heading
             currentManeuverView?.updateRotation(mapHeading: heading)
+            if abs(parent.mapHeading - heading) > 0.5 {
+                DispatchQueue.main.async {
+                    self.parent.mapHeading = heading
+                }
+            }
         }
         
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
@@ -725,20 +832,16 @@ struct CustomMapView: UIViewRepresentable {
                 return view
             }
             
-            // 3. Prijatelj iz Pivske Klape (zlati krog)
+            // 3. Prijatelj iz Pivske Klape (Zlati krog z začetnico in števcem pijač)
             if let squadAnnot = annotation as? SquadFriendAnnotation {
-                let identifier = "SquadFriendMarker"
-                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? MKMarkerAnnotationView
+                let identifier = "SquadFriendCustomMarker"
+                var view = mapView.dequeueReusableAnnotationView(withIdentifier: identifier) as? SquadFriendAnnotationView
                 if view == nil {
-                    view = MKMarkerAnnotationView(annotation: squadAnnot, reuseIdentifier: identifier)
-                    view?.canShowCallout = false
-                    view?.clusteringIdentifier = nil
+                    view = SquadFriendAnnotationView(annotation: squadAnnot, reuseIdentifier: identifier)
                 } else {
                     view?.annotation = squadAnnot
                 }
-                view?.markerTintColor = UIColor(red: 245/255, green: 158/255, blue: 11/255, alpha: 1.0)
-                view?.glyphText = String(squadAnnot.member.name.prefix(1)).uppercased()
-                view?.glyphTintColor = UIColor.black
+                view?.configure(with: squadAnnot.member)
                 return view
             }
             

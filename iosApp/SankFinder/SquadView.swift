@@ -7,6 +7,10 @@ struct SquadView: View {
     @State private var nicknameInput: String = ""
     @State private var messageInput: String = ""
     @State private var selectedTab: Int = 0 // 0 = Vstopi, 1 = Ustvari
+    @State private var showTrackerSheet: Bool = false
+    @State private var showLeaveAlert: Bool = false
+    @State private var showShareSheet: Bool = false
+    @State private var chatExportText: String = ""
     
     var body: some View {
         ZStack {
@@ -19,10 +23,18 @@ struct SquadView: View {
                     showBackButton: false,
                     actions: {
                         if squad.activeRoom != nil {
-                            Button(action: { squad.leaveRoom() }) {
-                                Text("Zapusti")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundColor(Theme.drajvRed)
+                            HStack(spacing: 12) {
+                                Button(action: exportChat) {
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundColor(Theme.beerGold)
+                                }
+                                
+                                Button(action: { showLeaveAlert = true }) {
+                                    Text("Zapusti")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundColor(Theme.drajvRed)
+                                }
                             }
                         }
                     }
@@ -58,6 +70,22 @@ struct SquadView: View {
         .onAppear {
             GlobalSyncManager.shared.reportScreen("Pivska Klapa")
             nicknameInput = squad.myUserName
+        }
+        .alert(isPresented: $showLeaveAlert) {
+            Alert(
+                title: Text("Zapusti Pivsko Klapo?"),
+                message: Text("Ali si prepričan, da želiš zapustiti to sobo? Izgubil boš povezavo s klepetom in radarjem."),
+                primaryButton: .destructive(Text("Zapusti")) {
+                    squad.leaveRoom()
+                },
+                secondaryButton: .cancel(Text("Prekliči"))
+            )
+        }
+        .sheet(isPresented: $showTrackerSheet) {
+            drinksTrackerSubmenu
+        }
+        .sheet(isPresented: $showShareSheet) {
+            ActivityView(activityItems: [chatExportText])
         }
     }
     
@@ -183,120 +211,87 @@ struct SquadView: View {
         .padding(.bottom, 80)
     }
     
-    // MARK: - Aktivna soba z živo kodo in klepetom
+    // MARK: - Aktivna soba z živo kodo, prečiščenim vrhom in klepetom
     private var activeSquadView: some View {
         VStack(spacing: 8) {
-            // Glava s kodo za povabilo
+            // Enotna prečiščena statusna vrstica klape (Koda + Submeni za Tracker)
             if let room = squad.activeRoom {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(room.name)
-                            .font(.headline)
-                            .fontWeight(.bold)
-                            .foregroundColor(.black)
-                        Text("Koda za vstop: \(room.code)")
-                            .font(.subheadline)
-                            .fontWeight(.heavy)
-                            .foregroundColor(.black.opacity(0.8))
-                    }
-                    Spacer()
+                let totalSquadDrinks = squad.members.map { $0.drinksCount }.reduce(0, +)
+                
+                HStack(spacing: 10) {
+                    // Koda sobe s hitrim kopiranjem
                     Button(action: {
                         UIPasteboard.general.string = room.code
                     }) {
                         HStack(spacing: 4) {
+                            Text(room.code)
+                                .font(.system(size: 13, weight: .black))
+                                .foregroundColor(.black)
                             Image(systemName: "doc.on.doc")
-                            Text("Kopiraj")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.black.opacity(0.8))
                         }
-                        .font(.caption)
-                        .fontWeight(.bold)
                         .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(Color.black.opacity(0.15))
-                        .foregroundColor(.black)
+                        .padding(.vertical, 7)
+                        .background(Theme.beerGold)
                         .cornerRadius(8)
                     }
-                }
-                .padding(12)
-                .background(Theme.beerGold)
-                .cornerRadius(14)
-                .padding(.horizontal, 16)
-                .padding(.top, 6)
-            }
-            
-            // Števec pijač in runda
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Tvoje pijače:")
-                        .font(.caption)
-                        .foregroundColor(Theme.textMuted)
-                    Text("\(squad.myDrinksCount) pijač")
-                        .font(.title3)
-                        .fontWeight(.black)
-                        .foregroundColor(Theme.beerGold)
-                }
-                
-                Spacer()
-                
-                Button(action: { squad.incrementDrink() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus")
-                        Text("Spil pijačo")
+                    
+                    // Gumb za odpiranje podmenija Trackerja pijač
+                    Button(action: { showTrackerSheet = true }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "list.clipboard.fill")
+                                .font(.system(size: 13))
+                                .foregroundColor(Theme.beerGold)
+                            Text("Tracker (\(totalSquadDrinks) piv • \(squad.members.count) oseb)")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(.white)
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(Theme.textMuted)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 7)
+                        .background(Theme.surfaceDark)
+                        .cornerRadius(8)
                     }
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Theme.beerGold)
-                    .foregroundColor(.black)
+                    
+                    Spacer()
+                    
+                    // Osebni hitri števec [-] [count] [+]
+                    HStack(spacing: 6) {
+                        Button(action: { squad.decrementDrink() }) {
+                            Text("-")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(width: 26, height: 26)
+                                .background(Theme.surfaceDark)
+                                .cornerRadius(6)
+                        }
+                        
+                        Text("\(squad.myDrinksCount)")
+                            .font(.system(size: 14, weight: .black))
+                            .foregroundColor(Theme.beerGold)
+                            .frame(minWidth: 20)
+                        
+                        Button(action: { squad.incrementDrink() }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.black)
+                                .frame(width: 26, height: 26)
+                                .background(Theme.beerGold)
+                                .cornerRadius(6)
+                        }
+                    }
+                    .padding(3)
+                    .background(Theme.cardDark)
                     .cornerRadius(8)
                 }
-                
-                Button(action: { squad.sendChatMessage("Jaz častim naslednjo rundo!", msgType: "round_call") }) {
-                    Text("Častim rundo")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Theme.surfaceDark)
-                        .foregroundColor(Theme.beerGold)
-                        .cornerRadius(8)
-                }
-            }
-            .padding(12)
-            .background(Theme.cardDark)
-            .cornerRadius(14)
-            .padding(.horizontal, 16)
-            
-            // Člani Klape
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(squad.members) { m in
-                        VStack(spacing: 3) {
-                            Text(String(m.name.prefix(1)).uppercased())
-                                .font(.subheadline)
-                                .fontWeight(.bold)
-                                .frame(width: 38, height: 38)
-                                .background(m.id == squad.myUserId ? Theme.beerGold : Theme.surfaceDark)
-                                .foregroundColor(m.id == squad.myUserId ? .black : .white)
-                                .clipShape(Circle())
-                                .overlay(Circle().stroke(Theme.beerGold, lineWidth: 1))
-                            
-                            Text(m.name)
-                                .font(.caption2)
-                                .foregroundColor(.white)
-                                .lineLimit(1)
-                            
-                            Text("\(m.drinksCount) pijač")
-                                .font(.system(size: 10))
-                                .foregroundColor(Theme.beerAmber)
-                        }
-                        .frame(width: 58)
-                    }
-                }
                 .padding(.horizontal, 16)
+                .padding(.top, 4)
             }
             
-            // Klepet v živo
+            // Klepet v živo (prostorno, neobremenjeno zgoraj)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(spacing: 8) {
@@ -318,13 +313,13 @@ struct SquadView: View {
                 }
             }
             
-            // Hitre fraze brez emojijev
+            // Hitre fraze brez emojijev (Poenoteno z Androidom)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    quickPhraseButton("Kje ste?")
-                    quickPhraseButton("Na zdravje!")
-                    quickPhraseButton("Še eno rundo!")
-                    quickPhraseButton("Kdaj gremo naprej?")
+                    quickPhraseButton("Naročil sem rundo!", msgType: "round_call")
+                    quickPhraseButton("Kdo gre na hrano?")
+                    quickPhraseButton("Pridem čez 5 min", msgType: "eta")
+                    quickPhraseButton("Kje točno sedite?")
                 }
                 .padding(.horizontal, 16)
             }
@@ -354,8 +349,178 @@ struct SquadView: View {
         }
     }
     
-    private func quickPhraseButton(_ text: String) -> some View {
-        Button(action: { squad.sendChatMessage(text) }) {
+    // MARK: - Podmeni za Tracker pijač (Podroben pregled vseh udeležencev)
+    private var drinksTrackerSubmenu: some View {
+        ZStack {
+            Theme.bgDark.edgesIgnoringSafeArea(.all)
+            
+            VStack(spacing: 16) {
+                // Ročaj za zapiranje
+                Capsule()
+                    .fill(Color.white.opacity(0.3))
+                    .frame(width: 40, height: 4)
+                    .padding(.top, 10)
+                
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Pivski Tracker Klape")
+                            .font(.title3)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                        Text("Stanje popitih pijač po posameznih članih")
+                            .font(.caption)
+                            .foregroundColor(Theme.textMuted)
+                    }
+                    Spacer()
+                    Button(action: { showTrackerSheet = false }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title2)
+                            .foregroundColor(Theme.textMuted)
+                    }
+                }
+                .padding(.horizontal, 20)
+                
+                let totalDrinks = squad.members.map { $0.drinksCount }.reduce(0, +)
+                let leader = squad.members.max(by: { $0.drinksCount < $1.drinksCount })
+                
+                // Povzetek kartica
+                HStack {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Skupaj popitih piv:")
+                            .font(.caption)
+                            .foregroundColor(Theme.textMuted)
+                        Text("\(totalDrinks) pijač")
+                            .font(.title2)
+                            .fontWeight(.black)
+                            .foregroundColor(Theme.beerGold)
+                    }
+                    Spacer()
+                    if let leader = leader, leader.drinksCount > 0 {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("Pivski vodja:")
+                                .font(.caption)
+                                .foregroundColor(Theme.textMuted)
+                            Text("\(leader.name) (\(leader.drinksCount))")
+                                .font(.headline)
+                                .fontWeight(.bold)
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+                .padding(14)
+                .background(Theme.cardDark)
+                .cornerRadius(14)
+                .padding(.horizontal, 20)
+                
+                // Seznam vseh članov klape
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(squad.members) { member in
+                            let isMe = member.id == squad.myUserId
+                            HStack(spacing: 12) {
+                                Text(String(member.name.prefix(1)).uppercased())
+                                    .font(.subheadline)
+                                    .fontWeight(.bold)
+                                    .frame(width: 38, height: 38)
+                                    .background(isMe ? Theme.beerGold : Theme.surfaceDark)
+                                    .foregroundColor(isMe ? .black : .white)
+                                    .clipShape(Circle())
+                                    .overlay(Circle().stroke(Theme.beerGold, lineWidth: 1.5))
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(isMe ? "\(member.name) (Ti)" : member.name)
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.white)
+                                    Text(isMe ? "Tvoj profil" : "Član klape")
+                                        .font(.caption2)
+                                        .foregroundColor(Theme.textMuted)
+                                }
+                                
+                                Spacer()
+                                
+                                if isMe {
+                                    HStack(spacing: 8) {
+                                        Button(action: { squad.decrementDrink() }) {
+                                            Text("-")
+                                                .font(.headline)
+                                                .foregroundColor(.white)
+                                                .frame(width: 30, height: 30)
+                                                .background(Theme.surfaceDark)
+                                                .cornerRadius(6)
+                                        }
+                                        Text("\(squad.myDrinksCount) pijač")
+                                            .font(.subheadline)
+                                            .fontWeight(.bold)
+                                            .foregroundColor(Theme.beerGold)
+                                        Button(action: { squad.incrementDrink() }) {
+                                            Image(systemName: "plus")
+                                                .font(.caption)
+                                                .fontWeight(.bold)
+                                                .foregroundColor(.black)
+                                                .frame(width: 30, height: 30)
+                                                .background(Theme.beerGold)
+                                                .cornerRadius(6)
+                                        }
+                                    }
+                                } else {
+                                    Text("\(member.drinksCount) pijač")
+                                        .font(.subheadline)
+                                        .fontWeight(.bold)
+                                        .foregroundColor(Theme.beerAmber)
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 4)
+                                        .background(Theme.surfaceDark)
+                                        .cornerRadius(8)
+                                }
+                            }
+                            .padding(10)
+                            .background(isMe ? Theme.surfaceDark.opacity(0.8) : Theme.cardDark)
+                            .cornerRadius(12)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+                
+                // Gumb Jaz častim rundo
+                Button(action: {
+                    squad.sendChatMessage("Jaz častim naslednjo rundo!", msgType: "round_call")
+                    showTrackerSheet = false
+                }) {
+                    HStack {
+                        Image(systemName: "sparkles")
+                        Text("Jaz častim naslednjo rundo!")
+                            .fontWeight(.bold)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Theme.beerGold)
+                    .foregroundColor(.black)
+                    .cornerRadius(12)
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+    
+    private func exportChat() {
+        guard let room = squad.activeRoom else { return }
+        var export = "ŠankFinder - Pivska Klapa: \(room.name) (\(room.code))\n"
+        export += "Izvoz klepeta: \(Date().formatted())\n"
+        export += "--- Sporočila ---\n"
+        for msg in squad.messages {
+            export += "\(msg.senderName): \(msg.content)\n"
+        }
+        export += "--- Osebni števec pijač ---\n"
+        export += "Tvoje zabeležene pijače: \(squad.myDrinksCount)\n"
+        chatExportText = export
+        showShareSheet = true
+    }
+    
+    private func quickPhraseButton(_ text: String, msgType: String = "text") -> some View {
+        Button(action: { squad.sendChatMessage(text, msgType: msgType) }) {
             Text(text)
                 .font(.caption2)
                 .fontWeight(.medium)
@@ -371,6 +536,7 @@ struct SquadView: View {
     private func chatBubble(msg: SquadMessage) -> some View {
         let isMe = msg.senderId == squad.myUserId
         let isSystem = msg.msgType == "system" || msg.senderId == "system"
+        let isRound = msg.msgType == "round_call"
         
         return HStack {
             if isSystem {
@@ -396,15 +562,31 @@ struct SquadView: View {
                     
                     Text(msg.content)
                         .font(.subheadline)
-                        .foregroundColor(isMe ? .black : .white)
+                        .foregroundColor(isRound ? .black : (isMe ? .black : .white))
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(isMe ? Theme.beerGold : Theme.cardDark)
+                        .background(isRound ? Theme.beerGold : (isMe ? Theme.beerGold : Theme.cardDark))
                         .cornerRadius(14)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14)
+                                .stroke(isRound ? Color.white : Color.clear, lineWidth: 1.5)
+                        )
                 }
                 
                 if !isMe { Spacer() }
             }
         }
     }
+}
+
+// MARK: - UIActivityViewController ovijalec za deljenje transkripta klepeta
+struct ActivityView: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    let applicationActivities: [UIActivity]? = nil
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: activityItems, applicationActivities: applicationActivities)
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

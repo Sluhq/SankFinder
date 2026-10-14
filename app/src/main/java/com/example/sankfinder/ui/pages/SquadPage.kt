@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.LocalDrink
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.SportsBar
 import androidx.compose.material3.AlertDialog
@@ -49,6 +51,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -112,6 +115,7 @@ fun SquadPage(
     var inputUserName by remember { mutableStateOf(myUserName) }
     var chatInput by remember { mutableStateOf("") }
     var showLeaveDialog by remember { mutableStateOf(false) }
+    var showTrackerSheet by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
 
@@ -494,94 +498,88 @@ fun SquadPage(
                 // ==========================================
                 Column(modifier = Modifier.fillMaxSize()) {
 
-                    // RUNDA TRACKER KARTICA
-                    Card(
+                    // ENOTNA PREČIŠČENA STATUSNA VRSTICA (TRACKER SUBMENI + HITRI ŠTEVEC)
+                    val totalSquadDrinks = members.sumOf { it.drinksCount }
+                    val myDrinkCount = members.find { it.id == squadViewModel.myUserId }?.drinksCount ?: 0
+
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 14.dp, vertical = 6.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        )
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
+                        // Gumb za odpiranje podmenija trackerja pijač
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                            modifier = Modifier.clickable { showTrackerSheet = true }
+                        ) {
                             Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                             ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = BeerGold.copy(alpha = 0.15f),
-                                        modifier = Modifier.size(34.dp)
-                                    ) {
-                                        Box(contentAlignment = Alignment.Center) {
-                                            Icon(
-                                                Icons.Default.LocalDrink,
-                                                contentDescription = null,
-                                                tint = BeerGold,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column {
-                                        Text(
-                                            text = "Moje pijače",
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 13.5.sp
-                                        )
-                                        Text(
-                                            text = "Tvoj osebni pivski seštevek",
-                                            fontSize = 11.sp,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                                Icon(
+                                    Icons.Default.SportsBar,
+                                    contentDescription = null,
+                                    tint = BeerGold,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Tracker ($totalSquadDrinks piv • ${members.size} oseb)",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.5.sp,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Icon(
+                                    Icons.Default.ArrowDropDown,
+                                    contentDescription = "Odpri meni",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+
+                        // Simetričen osebni števec [-] [count] [+]
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(3.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                                        .clickable { squadViewModel.decrementDrinks() },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("-", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
                                 }
 
-                                // Simetričen in urejen osebni števec [-] [ 0 ] [+]
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                                Text(
+                                    text = "$myDrinkCount",
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = BeerGold,
+                                    fontSize = 14.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.width(28.dp)
+                                )
+
+                                Box(
+                                    modifier = Modifier
+                                        .size(28.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(BeerGold)
+                                        .clickable { squadViewModel.incrementDrinks() },
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.padding(3.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(30.dp)
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(MaterialTheme.colorScheme.surfaceVariant)
-                                                .clickable { squadViewModel.decrementDrinks() },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Text("-", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
-                                        }
-
-                                        val myDrinkCount = members.find { it.id == squadViewModel.myUserId }?.drinksCount ?: 0
-                                        Text(
-                                            text = "$myDrinkCount",
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = BeerGold,
-                                            fontSize = 14.sp,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier.width(32.dp)
-                                        )
-
-                                        Box(
-                                            modifier = Modifier
-                                                .size(30.dp)
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(BeerGold)
-                                                .clickable { squadViewModel.incrementDrinks() },
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(Icons.Default.Add, contentDescription = "+1", tint = Color.Black, modifier = Modifier.size(15.dp))
-                                        }
-                                    }
+                                    Icon(Icons.Default.Add, contentDescription = "+1", tint = Color.Black, modifier = Modifier.size(14.dp))
                                 }
                             }
                         }
@@ -713,6 +711,201 @@ fun SquadPage(
                         )
                     }
                 }
+            }
+        }
+    }
+
+    if (showTrackerSheet) {
+        val totalSquadDrinks = members.sumOf { it.drinksCount }
+        val leader = members.maxByOrNull { it.drinksCount }
+
+        ModalBottomSheet(
+            onDismissRequest = { showTrackerSheet = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Pivski Tracker Klape",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Seznam vseh članov in število pijač",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(onClick = { showTrackerSheet = false }) {
+                        Icon(Icons.Default.Close, contentDescription = "Zapri", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Povzetek kartica
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text("Skupaj popitih piv:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("$totalSquadDrinks pijač", fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = BeerGold)
+                        }
+                        if (leader != null && leader.drinksCount > 0) {
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Pivski vodja:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("${leader.name} (${leader.drinksCount})", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Seznam vseh članov
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(240.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(members) { member ->
+                        val isMe = member.id == squadViewModel.myUserId
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isMe) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .background(if (isMe) BeerGold else MaterialTheme.colorScheme.surfaceVariant, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = member.name.take(1).uppercase(),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = if (isMe) Color.Black else Color.White
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(12.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (isMe) "${member.name} (Ti)" else member.name,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        color = Color.White
+                                    )
+                                    Text(
+                                        text = if (isMe) "Tvoj profil" else "Član klape",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                if (isMe) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                                .clickable { squadViewModel.decrementDrinks() },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text("-", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                                        }
+
+                                        Spacer(modifier = Modifier.width(6.dp))
+
+                                        Text(
+                                            text = "${member.drinksCount} pijač",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.5.sp,
+                                            color = BeerGold
+                                        )
+
+                                        Spacer(modifier = Modifier.width(6.dp))
+
+                                        Box(
+                                            modifier = Modifier
+                                                .size(28.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(BeerGold)
+                                                .clickable { squadViewModel.incrementDrinks() },
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(Icons.Default.Add, contentDescription = "+1", tint = Color.Black, modifier = Modifier.size(14.dp))
+                                        }
+                                    }
+                                } else {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant
+                                    ) {
+                                        Text(
+                                            text = "${member.drinksCount} pijač",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp,
+                                            color = BeerGold,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Gumb Jaz častim rundo
+                Button(
+                    onClick = {
+                        squadViewModel.sendQuickAction("Jaz častim naslednjo rundo za mizo!", "round_call")
+                        showTrackerSheet = false
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BeerGold)
+                ) {
+                    Icon(Icons.Default.SportsBar, contentDescription = null, tint = Color.Black)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Jaz častim naslednjo rundo!", fontWeight = FontWeight.Bold, color = Color.Black)
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
