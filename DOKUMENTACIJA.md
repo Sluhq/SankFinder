@@ -4,7 +4,8 @@
 > **Glavni jezik:** Kotlin 1.9+  
 > **UI ogrodje:** Jetpack Compose (Material 3)  
 > **Ciljna platforma:** Android (minSdk 26, targetSdk 34)  
-> **Zadnja posodobitev:** Oktober 2026
+> **Zadnja posodobitev:** Oktober 2026  
+> 🍎 **iOS Različica:** Celovita dokumentacija za Apple iOS se nahaja v [DOKUMENTACIJA_IOS.md](file:///c:/Android/SankFinder/DOKUMENTACIJA_IOS.md)
 
 ---
 
@@ -170,24 +171,29 @@ Navigacija je centralizirana v [AppNavHost.kt](file:///c:/Android/SankFinder/app
 
 ### 5.4 Zgodovina Obiskov & ML Kit OCR Skeniranje Računov
 - **Datoteka:** [HistoryPage.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/HistoryPage.kt) & [ReceiptScannerDialog.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/components/ReceiptScannerDialog.kt)
-- Zajem fotografije računa prek kamere ali galerije.
-- **Dvojni analizator z Google ML Kit:**
-  1. `BarcodeScanning`: Prebere QR kodo davčne blagajne (FURS URL) in samodejno potrdi pristnost računa.
-  2. `TextRecognition`: Prebere zneske (npr. `SKUPAJ: 12.50 €`), datum in ime lokala.
-- Shrani se v lokalni `sankfinder_history.json` z zneskom, datumom in potrjenim statusom.
+- Zajem fotografije računa prek kamere ali galerije ter neposredno skeniranje s kamero v živo.
+- **Napredni dvojni analizator z Google ML Kit:**
+  1. `BarcodeScanning`: Zazna in dekodira QR kodo slovenskih davčnih blagajn (FURS URL format z ZOI/EOR kodami) ter avtomatsko verificira pristnost računa.
+  2. `TextRecognition`: Inteligentna razčlenitev vrstic računa z namenskim slovarjem:
+     - **Alkoholne pijače:** Pivo (Laško, Union, Heineken, IPA, Zlatorog, Temno), Vino (Cviček, Malvazija, Teran, Refošk, Rebula, Cabernet), Žgane pijače & Koktejli (Pelinkovec, Gin, Whiskey, Jack Daniels, Jägermeister, Vodka, Rum, Spritz, Aperol, Borovniček).
+     - **Brezalkoholne pijače:** Radenska, Donat, Naravna voda, Cedevita, Kava (Espresso, Macchiato, Cappuccino, Bela kava), Čaj, Coca Cola, Cockta, Fanta, Sprite, Sokovi (Jabolčni, Pomarančni, Ledeni čaj), Red Bull itd.
+     - **Zneski in količine:** Zaznava formate količin (`1x`, `2 kom`, `0.5L`, `0.33L`, `0.03L`), cen na enoto ter skupnega zneska (`SKUPAJ`, `ZA PLAČILO: 12.50 €`).
+- Podatki se strukturirano shranijo v lokalni `sankfinder_history.json` z razčlenjenimi artikli, zneskom, datumom in statusom potrditve.
 
 ### 5.5 Nastavitve & Shramba Stanja (DataStore)
 - **Datoteka:** [SettingsPage.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/SettingsPage.kt) & [ThemeDataStore.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/datastore/ThemeDataStore.kt)
 - **Izbira števila lokalov (Limit):**
   - Hitre izbire: `10`, `25`, `50` lokalov ali `Po meri...` (5 do 100).
-  - Vrednost se trajno shrani v DataStore in je reaktivno povezana z `MainPage.kt` in `LokalViewModel.kt`. Ko uporabnik izbere 50 lokalov, se seznam v realnem času ponovno naloži s 50 lokali.
+  - Vrednost se trajno shrani v DataStore in je reaktivno povezana z `MainPage.kt` in `LokalViewModel.kt`. Ko uporabnik izbere novo vrednost, se seznam v realnem času ponovno naloži.
 - **Radij iskanja:** `1 km`, `2 km`, `3 km`, `5 km`.
+- **Prečiščen in profesionalen vmesnik:** Odstranjeni so odvečni zvočni učinki (kot je bilo točenje piva), kar zagotavlja čist, nemoteč in zanesljiv uporabniški vmesnik.
 - **Diagnostični center:** Samodejno preverja stanje dovoljenj za GPS, kamero, baterijsko optimizacijo in stanje povezave s strežnikom Geoapify. Ob vrnitvi iz sistemskih nastavitev se diagnostika nemudoma posodobi prek `LifecycleEventObserver`.
 
 ### 5.6 Potisna Obvestila na Zaklenjenem Zaslonu
 - **Datoteka:** [SankNotificationHelper.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/notifications/SankNotificationHelper.kt)
-- Med aktivno navigacijo prikazuje živo obvestilo z naslednjim manevrom, razdaljo in predvidenim časom prihoda.
+- Med aktivno navigacijo prikazuje živo obvestilo na zaklenjenem zaslonu z naslednjim manevrom, razdaljo, ikono zavoja in predvidenim časom hoje.
 - Vsebuje gumb za prekinitev navigacije, ki prek [NavigationBridge.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/notifications/NavigationBridge.kt) nemudoma ustavi vodenje v aplikaciji.
+- Popolna usklajenost formatov in dogodkov z iOS Live Notification sistemom.
 
 ### 5.7 Pivska Klapa (Skupinsko šankanje, Chat, Live Radar, Runda Tracker & Admin Uprava)
 - **Datoteke:** [SquadPage.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/SquadPage.kt), [SquadViewModel.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/viewmodels/SquadViewModel.kt), [SquadRepository.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/network/SquadRepository.kt), [SquadModels.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/data/SquadModels.kt)

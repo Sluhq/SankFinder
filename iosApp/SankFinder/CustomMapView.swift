@@ -1,19 +1,35 @@
 import SwiftUI
 import MapKit
+import UIKit
 
-// MARK: - OpenStreetMap Mapnik Ploščice s predpomnjenjem
+// MARK: - OpenStreetMap Mapnik Ploščice s predpomnjenjem in Over-Zoom podporo (brez Apple Maps)
 class OSMTileOverlay: MKTileOverlay {
     private let tileCache = NSCache<NSString, NSData>()
+    private let maxNativeZ: Int = 19
+    
+    private static let tileSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        let cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("OSMTileDiskCache", isDirectory: true)
+        config.urlCache = URLCache(
+            memoryCapacity: 64 * 1024 * 1024,   // 64 MB RAM
+            diskCapacity: 256 * 1024 * 1024,    // 256 MB Disk
+            directory: cacheDir
+        )
+        config.requestCachePolicy = .returnCacheDataElseLoad
+        config.timeoutIntervalForRequest = 10
+        return URLSession(configuration: config)
+    }()
     
     init() {
         super.init(urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png")
-        // canReplaceMapContent = false omogoča zvezno Apple Maps podlago,
-        // tako da uporabnik NIKOLI ne izgubi karte ob hitrem zumiranju ali pomanjkanju povezave!
-        self.canReplaceMapContent = false
+        // Izklopi Apple Maps podlago v ozadju
+        self.canReplaceMapContent = true
         self.tileSize = CGSize(width: 256, height: 256)
-        self.maximumZ = 19
+        // Dovolimo zum do z = 22 (nad z = 19 se izreže in poveča ploščica iz z = 19)
+        self.maximumZ = 22
         self.minimumZ = 1
-        tileCache.countLimit = 800
+        tileCache.countLimit = 1500
     }
     
     override func url(forTilePath path: MKTileOverlayPath) -> URL {
@@ -27,19 +43,113 @@ class OSMTileOverlay: MKTileOverlay {
             return
         }
         
+        // 1. Over-Zoom: če je z > 19, izreži in povečaj ustrezni del ploščice iz z = 19
+        if path.z > maxNativeZ {
+            let diff = path.z - maxNativeZ
+            let parentX = path.x >> diff
+            let parentY = path.y >> diff
+            let parentPath = MKTileOverlayPath(
+                x: parentX,
+                y: parentY,
+                z: maxNativeZ,
+                contentScaleFactor: path.contentScaleFactor
+            )
+            
+            fetchNativeTile(at: parentPath) { [weak self] parentData, error in
+                guard let self = self,
+                      let parentData = parentData,
+                      let upscaled = self.cropAndUpscaleTile(parentData: parentData, childX: path.x, childY: path.y, diff: diff) else {
+                    DispatchQueue.main.async { result(nil, error) }
+                    return
+                }
+                self.tileCache.setObject(upscaled as NSData, forKey: key)
+                DispatchQueue.main.async { result(upscaled, nil) }
+            }
+            return
+        }
+        
+        // 2. Standardni prenos izvorne OSM ploščice (z <= 19)
+        fetchNativeTile(at: path) { [weak self] data, error in
+            if let data = data {
+                DispatchQueue.main.async { result(data, nil) }
+            } else if let fallback = self?.tryFallbackFromCachedParent(for: path) {
+                DispatchQueue.main.async { result(fallback, nil) }
+            } else {
+                DispatchQueue.main.async { result(nil, error) }
+            }
+        }
+    }
+    
+    private func fetchNativeTile(at path: MKTileOverlayPath, completion: @escaping (Data?, Error?) -> Void) {
+        let key = "\(path.z)/\(path.x)/\(path.y)" as NSString
+        if let cached = tileCache.object(forKey: key) {
+            completion(cached as Data, nil)
+            return
+        }
+        
         let tileUrl = self.url(forTilePath: path)
         var request = URLRequest(url: tileUrl)
-        request.setValue("SankFinderApp-Slovenia/1.0 (https://sankfinder.sluga.me; contact@sluga.me)", forHTTPHeaderField: "User-Agent")
+        request.setValue("SankFinderApp-Slovenia/1.2 (https://sankfinder.sluga.me; contact@sluga.me)", forHTTPHeaderField: "User-Agent")
         request.cachePolicy = .returnCacheDataElseLoad
         
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            if let data = data {
-                self?.tileCache.setObject(data as NSData, forKey: key)
-                result(data, nil)
-            } else {
-                result(nil, error)
+        Self.tileSession.dataTask(with: request) { [weak self] data, response, error in
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                completion(nil, error)
+                return
             }
+            guard let data = data, !data.isEmpty, UIImage(data: data) != nil else {
+                completion(nil, error)
+                return
+            }
+            self?.tileCache.setObject(data as NSData, forKey: key)
+            completion(data, nil)
         }.resume()
+    }
+    
+    private func cropAndUpscaleTile(parentData: Data, childX: Int, childY: Int, diff: Int) -> Data? {
+        guard diff > 0,
+              let image = UIImage(data: parentData),
+              let cgImage = image.cgImage else { return nil }
+        
+        let scale = 1 << diff
+        let subX = childX % scale
+        let subY = childY % scale
+        
+        let imgW = CGFloat(cgImage.width)
+        let imgH = CGFloat(cgImage.height)
+        let cropW = imgW / CGFloat(scale)
+        let cropH = imgH / CGFloat(scale)
+        
+        let cropRect = CGRect(
+            x: CGFloat(subX) * cropW,
+            y: CGFloat(subY) * cropH,
+            width: cropW,
+            height: cropH
+        )
+        
+        guard let croppedCG = cgImage.cropping(to: cropRect) else { return nil }
+        
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        format.opaque = true
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 256, height: 256), format: format)
+        let upscaledImage = renderer.image { _ in
+            UIImage(cgImage: croppedCG).draw(in: CGRect(x: 0, y: 0, width: 256, height: 256))
+        }
+        return upscaledImage.pngData()
+    }
+    
+    private func tryFallbackFromCachedParent(for path: MKTileOverlayPath) -> Data? {
+        for diff in 1...2 {
+            let parentZ = path.z - diff
+            guard parentZ >= minimumZ else { continue }
+            let parentKey = "\(parentZ)/\(path.x >> diff)/\(path.y >> diff)" as NSString
+            if let parentData = tileCache.object(forKey: parentKey) as Data?,
+               let upscaled = cropAndUpscaleTile(parentData: parentData, childX: path.x, childY: path.y, diff: diff) {
+                return upscaled
+            }
+        }
+        return nil
     }
 }
 
