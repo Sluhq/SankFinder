@@ -26,7 +26,7 @@ struct HistoryView: View {
             
             VStack(spacing: 0) {
                 // MATERIAL 3 TOP APP BAR
-                MaterialTopAppBar(title: "Zgodovina obiskov") {
+                MaterialTopAppBar(title: "Zgodovina obiskov", actions: {
                     Button(action: {
                         resetInputFields()
                         showAddModal = true
@@ -993,7 +993,7 @@ struct CameraReceiptScannerModalView: View {
                     qty = Int(nsLine.substring(with: m.range(at: 1))) ?? 1
                 } else if let m = qtyRegexStart?.firstMatch(in: line, range: fullRange), m.numberOfRanges > 1 {
                     let st = Int(nsLine.substring(with: m.range(at: 1))) ?? 1
-                    if st in 1...99 { qty = st }
+                    if (1...99).contains(st) { qty = st }
                 }
                 
                 // Cene na vrstici
@@ -1051,7 +1051,7 @@ struct CameraReceiptScannerModalView: View {
                 if let matches = priceRegex?.matches(in: line, range: NSRange(location: 0, length: (line as NSString).length)) {
                     for m in matches {
                         let str = (line as NSString).substring(with: m.range(at: 1)).replacingOccurrences(of: ",", with: ".")
-                        if let d = Double(str), d in 1.0...500.0, d > totalAmt {
+                        if let d = Double(str), (1.0...500.0).contains(d), d > totalAmt {
                             totalAmt = d
                         }
                     }

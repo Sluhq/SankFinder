@@ -16,8 +16,8 @@ struct SquadView: View {
                 // MATERIAL 3 TOP APP BAR
                 MaterialTopAppBar(
                     title: squad.activeRoom != nil ? squad.activeRoom!.name : "Pivska Klapa",
-                    showBackButton: false
-                ) {
+                    showBackButton: false,
+                    actions: {
                     if squad.activeRoom != nil {
                         Button(action: { squad.leaveRoom() }) {
                             Text("Zapusti")
