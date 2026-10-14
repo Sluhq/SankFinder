@@ -5,10 +5,11 @@ import Combine
 class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     private let manager = CLLocationManager()
     
-    // Začetna lokacija: center Ljubljane (da se takoj naložijo lokali, preden GPS zaklene satelite)
+    // Privzeta koordinata le kot varnostna rezerva, če GPS ni odobren
     static let defaultCoordinate = CLLocationCoordinate2D(latitude: 46.056946, longitude: 14.505751)
     
-    @Published var location: CLLocationCoordinate2D? = LocationManager.defaultCoordinate
+    @Published var location: CLLocationCoordinate2D? = nil
+    @Published var hasRealLocation: Bool = false
     @Published var heading: Double = 0.0
     @Published var isAuthorized: Bool = false
     @Published var errorDescription: String?
@@ -64,6 +65,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         guard let latest = locations.last else { return }
         DispatchQueue.main.async {
             self.location = latest.coordinate
+            self.hasRealLocation = true
             self.isAuthorized = true
         }
     }

@@ -173,7 +173,13 @@ struct BarsListView: View {
         }
         .onAppear {
             GlobalSyncManager.shared.reportScreen("Seznam lokalov")
-            if bars.isEmpty {
+            locationManager.requestPermission()
+            if locationManager.hasRealLocation || bars.isEmpty {
+                loadBars()
+            }
+        }
+        .onChange(of: locationManager.hasRealLocation) { hasReal in
+            if hasReal {
                 loadBars()
             }
         }

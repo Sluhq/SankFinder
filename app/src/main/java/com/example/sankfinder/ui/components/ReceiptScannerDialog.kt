@@ -86,14 +86,35 @@ import java.time.LocalDateTime
 import java.util.Locale
 import java.util.regex.Pattern
 
+data class ScannedReceiptItem(
+    val rawLine: String,
+    val cleanName: String,
+    val quantity: Int,
+    val unitPrice: Double?,
+    val totalPrice: Double?,
+    val isAlcoholic: Boolean
+)
+
+data class FursQrData(
+    val isValid: Boolean,
+    val zoi: String? = null,
+    val eor: String? = null,
+    val taxNumber: String? = null,
+    val dateStr: String? = null,
+    val amount: Double? = null
+)
+
 data class ScannedReceiptData(
     val pubName: String,
     val address: String,
     val items: List<String>,
+    val parsedDrinks: List<ScannedReceiptItem> = emptyList(),
     val totalDrinks: Int,
     val totalAmount: Double,
     val isQrVerified: Boolean,
-    val rawQrCode: String
+    val rawQrCode: String,
+    val fursZoi: String? = null,
+    val fursEor: String? = null
 )
 
 @Composable
@@ -573,6 +594,58 @@ fun ReceiptScannerDialog(
 
                             Spacer(modifier = Modifier.height(10.dp))
 
+                            // Prikaz prepoznanih pijač z ikonami (pivo / kava / sok)
+                            if (scannedResult?.parsedDrinks?.isNotEmpty() == true) {
+                                Text(
+                                    text = "Prepoznane pijače (${scannedResult?.parsedDrinks?.size}):",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                        .padding(8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    scannedResult?.parsedDrinks?.forEach { drink ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.weight(1f, fill = false),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = if (drink.isAlcoholic) "🍺" else "☕",
+                                                    fontSize = 13.sp
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "${drink.quantity}x ${drink.cleanName}",
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1
+                                                )
+                                            }
+                                            if (drink.totalPrice != null) {
+                                                Text(
+                                                    text = String.format(Locale.US, "%.2f €", drink.totalPrice),
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = BeerGold
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+
                             // Opombe / Prepoznane postavke
                             OutlinedTextField(
                                 value = editItemsNote,
@@ -591,7 +664,58 @@ fun ReceiptScannerDialog(
 }
 
 /**
- * Pametni analizator slovenskih in splošnih gostinskih računov iz OCR besedila
+ * Razčlenjevanje slovenskih FURS QR kod (blagajne.fu.gov.si / ZOI / EOR / znesek)
+ */
+fun parseFursQrCode(rawQr: String): FursQrData {
+    if (rawQr.isBlank()) return FursQrData(false)
+    val lower = rawQr.lowercase()
+    val isFurs = lower.contains("fu.gov.si") || lower.contains("zoi=") || lower.contains("eor=")
+    
+    var zoi: String? = null
+    var eor: String? = null
+    var taxNumber: String? = null
+    var dateStr: String? = null
+    var amount: Double? = null
+
+    val queryPart = if (rawQr.contains("?")) rawQr.substringAfter("?") else rawQr
+    val pairs = queryPart.split("&")
+    
+    for (pair in pairs) {
+        val parts = pair.split("=")
+        if (parts.size == 2) {
+            val key = parts[0].trim().lowercase()
+            val value = parts[1].trim()
+            when (key) {
+                "zoi" -> zoi = value
+                "eor" -> eor = value
+                "davcna", "davčna" -> taxNumber = value
+                "cas", "čas" -> dateStr = value
+                "znesek", "amt", "amount" -> {
+                    if (value.contains(".") || value.contains(",")) {
+                        amount = value.replace(',', '.').toDoubleOrNull()
+                    } else {
+                        val cents = value.toLongOrNull()
+                        if (cents != null) {
+                            amount = cents / 100.0
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    return FursQrData(
+        isValid = isFurs || amount != null,
+        zoi = zoi,
+        eor = eor,
+        taxNumber = taxNumber,
+        dateStr = dateStr,
+        amount = amount
+    )
+}
+
+/**
+ * Celovit analizator slovenskih gostinskih računov iz OCR besedila in QR kode
  */
 private fun parseReceiptText(
     rawText: String,
@@ -600,23 +724,26 @@ private fun parseReceiptText(
     isQr: Boolean
 ): ScannedReceiptData {
     val lines = rawText.split("\n").map { it.trim() }.filter { it.isNotBlank() }
+    val fursData = parseFursQrCode(qrCode)
 
     // 1. Naziv lokala (preveri prve vrstice računa ali ohrani privzetega)
     var pubName = defaultPub?.name ?: ""
     val address = defaultPub?.address ?: "Ljubljana"
 
     if (pubName.isBlank() && lines.isNotEmpty()) {
-        for (i in 0 until minOf(4, lines.size)) {
+        for (i in 0 until minOf(5, lines.size)) {
             val line = lines[i]
-            if (line.contains("d.o.o.", ignoreCase = true) ||
+            if (line.contains("d.o.o", ignoreCase = true) ||
                 line.contains("s.p.", ignoreCase = true) ||
                 line.contains("bar", ignoreCase = true) ||
                 line.contains("pivnica", ignoreCase = true) ||
                 line.contains("gostilna", ignoreCase = true) ||
                 line.contains("kavarna", ignoreCase = true) ||
-                line.contains("pub", ignoreCase = true)
+                line.contains("pub", ignoreCase = true) ||
+                line.contains("lounge", ignoreCase = true)
             ) {
-                pubName = line
+                pubName = line.replace(Regex("""(?i)\b(d\.o\.o\.?|s\.p\.?)\b.*"""), "").trim()
+                if (pubName.isBlank()) pubName = line
                 break
             }
         }
@@ -625,63 +752,176 @@ private fun parseReceiptText(
         }
     }
 
-    // 2. Prepoznavanje postavk pijač in zneskov
-    val beverageKeywords = listOf(
-        "pivo", "laško", "union", "heineken", "radenska", "voda", "kava", "espresso",
-        "cappuccino", "čaj", "sok", "cola", "fanta", "sprite", "pelinkovec", "jeger",
-        "gin", "tonik", "aperol", "spritz", "vino", "cviček", "malvazija", "refošk",
-        "rum", "vodka", "viski", "pijača", "špricer", "koktajl", "cocktail", "radler",
-        "pils", "ipa", "ale", "bela kava", "macchiato", "krožnik", "toast"
+    // 2. Slovarji alkoholnih in brezalkoholnih pijač
+    val alcoholicKeywords = listOf(
+        // Pivo
+        "union", "lasko", "laško", "zlatorog", "heineken", "radler", "ipa", "apa", "ale",
+        "porter", "stout", "lager", "pils", "pilsner", "guinness", "corona", "kozel",
+        "staropramen", "budweiser", "budvar", "bevog", "pelicon", "mali grad", "tektonik",
+        "green gold", "loov", "maister", "human fish", "reservat", "somersby", "cider",
+        "točeno", "toceno", "pivo", "svetlo", "temno", "nefiltrirano", "pšenično", "psenicno",
+        "erdinger", "paulaner", "weihenstephaner", "leffe", "hoegaarden", "bernard",
+        "tuborg", "carlsberg", "peroni", "moretti", "desperados", "hladno pivo",
+        // Vino
+        "vino", "cviček", "cvicek", "refošk", "refosk", "malvazija", "špricer", "spricer",
+        "brizganec", "zvrst", "bela zvrst", "rdeča zvrst", "merlot", "cabernet", "sauvignon",
+        "chardonnay", "sivi pinot", "modri pinot", "beli pinot", "zeleni silvanec",
+        "rumeni muškat", "muskat", "rebula", "teran", "zelen", "pinela", "penina", "prosecco",
+        "šampanjec", "sampanjec", "champagne", "rose", "roze", "kuhano vino", "namizno vino",
+        "buteljka", "vrhunsko", "kakovostno", "janževec", "haložan", "jeruzalemčan",
+        // Žgana & koktajli
+        "pelinkovec", "pelin", "antique", "jager", "jäger", "jägermeister", "jagermeister",
+        "gin", "tonic", "tonik", "vodka", "rum", "viski", "whiskey", "whisky", "bourbon",
+        "jack daniels", "jack daniel's", "chivas", "jameson", "ballantines", "ballantine's",
+        "borovniček", "borovnicek", "borovničke", "borovnicke", "travarica", "viljamovka",
+        "slivovka", "slivovica", "brinjevec", "sadjevec", "šnops", "snops", "medica",
+        "aperol", "spritz", "hugo", "campari", "tequila", "tekila", "ouzo", "cynar",
+        "stock", "amaro", "martini", "bacardi", "havana", "captain morgan", "baileys",
+        "koktajl", "cocktail", "mojito", "margarita", "cuba libre", "long island",
+        "pina colada", "negroni", "whiskey sour", "žganje", "zganje", "liker"
     )
 
-    val detectedItems = mutableListOf<String>()
+    val nonAlcoholicKeywords = listOf(
+        // Kava & čaj
+        "kava", "espresso", "espreso", "macchiato", "makiato", "cappuccino", "kapučino", "kapucino",
+        "bela kava", "podaljšana", "podaljsana", "kratka kava", "kava z mlekom", "kava s smetano",
+        "brezkofeinska", "decaf", "brez kofeina", "latte", "caffe latte", "flat white", "ledena kava",
+        "kakav", "vroča čokolada", "vroca cokolada", "čaj", "caj", "kamilica", "meta", "planinski čaj",
+        "šipek", "sipek", "zeleni čaj", "črni čaj", "sadni čaj", "zeliščni čaj", "ingver",
+        "čaj z medom", "čaj z limono", "mleko",
+        // Voda
+        "voda", "radenska", "jamnica", "donat", "zala", "dana", "costella", "roemerquelle",
+        "mineralna", "naravna voda", "gazirana", "negazirana", "voda z okusom", "soda", "soda voda",
+        // Brezalkoholne pijače & sokovi
+        "coca cola", "coca-cola", "coke", "cola zero", "fanta", "sprite", "cockta", "cocta",
+        "cedevita", "schweppes", "bitter lemon", "tangerine", "red bull", "redbull", "monster",
+        "energetski", "energy drink", "limonada", "sveža limonada", "pomarančni sok", "pomarancni sok",
+        "jabolčni sok", "jabolcni sok", "gosti sok", "breskov sok", "jagodni sok", "sok",
+        "fructal", "sola", "pago", "juice", "naravni sok", "smoothie", "ledeni čaj", "ice tea",
+        "brezalkoholno"
+    )
+
+    val detectedDrinks = mutableListOf<ScannedReceiptItem>()
+    val detectedItemsRaw = mutableListOf<String>()
     var detectedDrinksCount = 0
     var parsedTotalAmount = 0.0
 
-    // Vzorec za znesek (npr. 3.50, 4,20, 15.00 EUR)
-    val pricePattern = Pattern.compile("(\\d{1,4}[.,]\\d{2})\\s*(?:€|eur)?", Pattern.CASE_INSENSITIVE)
+    // Vzorec za iskanje zneska (npr. 3.20, 6,40 EUR)
+    val pricePattern = Pattern.compile("(\\d{1,4}[.,]\\d{2})\\b")
 
     for (line in lines) {
         val lower = line.lowercase()
 
-        // Preveri ključne besede za pijače
-        val isBeverage = beverageKeywords.any { lower.contains(it) }
+        // Ali vsebuje ključne besede za pijačo?
+        val hasAlcohol = alcoholicKeywords.any { lower.contains(it) }
+        val hasNonAlcohol = nonAlcoholicKeywords.any { lower.contains(it) }
 
-        if (isBeverage) {
-            detectedItems.add(line)
+        if (hasAlcohol || hasNonAlcohol) {
+            val isZeroAlc = lower.contains("0.0") || lower.contains("0,0") || lower.contains("brezalkohol")
+            val isAlcoholicDrink = hasAlcohol && !isZeroAlc
 
-            // Poskusi prepoznati količino (npr. "2x" ali "3 x")
-            val qtyMatch = Pattern.compile("(\\d+)\\s*[xX*]").matcher(line)
-            if (qtyMatch.find()) {
-                val qty = qtyMatch.group(1)?.toIntOrNull() ?: 1
-                detectedDrinksCount += qty
-            } else {
-                detectedDrinksCount += 1
+            // 1. Količina (npr. "2x", "2 *", "2 KOS", "2 KOM", začetek z "2 ")
+            var qty = 1
+            val qtyMatchX = Pattern.compile("""\b(\d+)\s*[xX*]""").matcher(line)
+            val qtyMatchKos = Pattern.compile("""\b(\d+)\s*(?:kos|kom|komad)""", Pattern.CASE_INSENSITIVE).matcher(line)
+            val qtyMatchStart = Pattern.compile("""^(\d+)\s+[A-Za-zčšžČŠŽ]""").matcher(line)
+
+            if (qtyMatchX.find()) {
+                qty = qtyMatchX.group(1)?.toIntOrNull() ?: 1
+            } else if (qtyMatchKos.find()) {
+                qty = qtyMatchKos.group(1)?.toIntOrNull() ?: 1
+            } else if (qtyMatchStart.find()) {
+                val startVal = qtyMatchStart.group(1)?.toIntOrNull() ?: 1
+                if (startVal in 1..99) qty = startVal
             }
+
+            // 2. Iskanje cen na tej vrstici
+            val pricesOnLine = mutableListOf<Double>()
+            val pMatcher = pricePattern.matcher(line)
+            while (pMatcher.find()) {
+                val pStr = pMatcher.group(1)?.replace(',', '.') ?: continue
+                // Preveri, da ni volumen npr. 0.50L ali 0.25L
+                val endIdx = pMatcher.end()
+                val nextPart = if (endIdx < line.length) line.substring(endIdx, minOf(endIdx + 4, line.length)).lowercase() else ""
+                if (nextPart.startsWith("l") || nextPart.startsWith("dl") || nextPart.startsWith("cl") || nextPart.startsWith("ml")) {
+                    continue
+                }
+                pStr.toDoubleOrNull()?.let { pricesOnLine.add(it) }
+            }
+
+            var unitP: Double? = null
+            var totalP: Double? = null
+
+            if (pricesOnLine.size >= 2) {
+                unitP = pricesOnLine[0]
+                totalP = pricesOnLine[pricesOnLine.size - 1]
+            } else if (pricesOnLine.size == 1) {
+                totalP = pricesOnLine[0]
+                unitP = if (qty > 1) totalP / qty else totalP
+            }
+
+            // Očisti ime artikla
+            var clean = line
+                .replace(Regex("""(?i)\b\d+\s*[xX*]\s*"""), "")
+                .replace(Regex("""(?i)\b\d+\s*(?:kos|kom)\b\s*"""), "")
+                .replace(Regex("""^\d+\s+"""), "")
+                .replace(Regex("""\b\d{1,4}[.,]\d{2}\b.*"""), "")
+                .replace(Regex("""[€$*]"""), "")
+                .trim()
+            if (clean.isBlank()) clean = line
+
+            detectedDrinks.add(
+                ScannedReceiptItem(
+                    rawLine = line,
+                    cleanName = clean,
+                    quantity = qty,
+                    unitPrice = unitP,
+                    totalPrice = totalP,
+                    isAlcoholic = isAlcoholicDrink
+                )
+            )
+
+            val priceFormatted = if (totalP != null) " (${String.format(Locale.US, "%.2f", totalP)} €)" else ""
+            detectedItemsRaw.add("${qty}x $clean$priceFormatted")
+            detectedDrinksCount += qty
         }
 
-        // Iskanje skupnega zneska: "SKUPAJ", "ZA PLAČILO", "ZNESEK", "TOTAL", "EUR"
+        // Iskanje skupnega zneska na računu
         if (lower.contains("skupaj") || lower.contains("za plačilo") || lower.contains("plačilo") ||
-            lower.contains("znesek") || lower.contains("total") || lower.contains("vrednost")
+            lower.contains("znesek") || lower.contains("total") || lower.contains("vrednost") ||
+            lower.contains("kartica") || lower.contains("gotovina")
         ) {
             val matcher = pricePattern.matcher(line)
-            if (matcher.find()) {
+            while (matcher.find()) {
                 val priceStr = matcher.group(1)?.replace(',', '.')
                 priceStr?.toDoubleOrNull()?.let {
-                    if (it > parsedTotalAmount) parsedTotalAmount = it
+                    if (it in 1.0..600.0 && it > parsedTotalAmount) parsedTotalAmount = it
                 }
             }
         }
     }
 
-    // Če nismo našli vrstice s "SKUPAJ", poišči največjo ceno na računu kot skupni znesek
+    // Če imamo znesek iz FURS QR kode, je ta najbolj zanesljiv!
+    if (fursData.amount != null && fursData.amount > 0.0) {
+        parsedTotalAmount = fursData.amount
+    }
+
+    // Če zneska nismo našli z besedilom SKUPAJ, seštejemo cene prepoznanih pijač
+    val drinksSum = detectedDrinks.mapNotNull { it.totalPrice }.sum()
+    if (parsedTotalAmount == 0.0 && drinksSum > 0.0) {
+        parsedTotalAmount = drinksSum
+    } else if (drinksSum > parsedTotalAmount && parsedTotalAmount < (drinksSum * 0.7)) {
+        parsedTotalAmount = drinksSum
+    }
+
+    // Če še vedno nimamo zneska, poišči največje število s formatom cene na računu
     if (parsedTotalAmount == 0.0) {
         for (line in lines) {
             val matcher = pricePattern.matcher(line)
             while (matcher.find()) {
                 val priceStr = matcher.group(1)?.replace(',', '.')
                 priceStr?.toDoubleOrNull()?.let {
-                    if (it in 1.0..250.0 && it > parsedTotalAmount) {
+                    if (it in 1.20..300.0 && it > parsedTotalAmount) {
                         parsedTotalAmount = it
                     }
                 }
@@ -689,10 +929,9 @@ private fun parseReceiptText(
         }
     }
 
-    // Če nismo prepoznali specifičnih pijač, vključi povzetek vrstic
-    if (detectedItems.isEmpty()) {
-        val candidateLines = lines.filter { it.length > 3 && !it.contains("davčna", ignoreCase = true) }.take(3)
-        detectedItems.addAll(candidateLines)
+    if (detectedItemsRaw.isEmpty()) {
+        val candidateLines = lines.filter { it.length > 3 && !it.contains("davčna", ignoreCase = true) && !it.contains("zoi", ignoreCase = true) }.take(3)
+        detectedItemsRaw.addAll(candidateLines)
     }
 
     if (detectedDrinksCount == 0) {
@@ -702,11 +941,14 @@ private fun parseReceiptText(
     return ScannedReceiptData(
         pubName = pubName.ifBlank { "Pivnica" },
         address = address,
-        items = detectedItems,
+        items = detectedItemsRaw,
+        parsedDrinks = detectedDrinks,
         totalDrinks = detectedDrinksCount,
         totalAmount = parsedTotalAmount,
-        isQrVerified = isQr && qrCode.isNotBlank(),
-        rawQrCode = qrCode
+        isQrVerified = (isQr && qrCode.isNotBlank()) || fursData.isValid,
+        rawQrCode = qrCode,
+        fursZoi = fursData.zoi,
+        fursEor = fursData.eor
     )
 }
 

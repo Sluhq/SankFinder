@@ -6,7 +6,6 @@ struct SettingsView: View {
     @AppStorage("soundAlerts") private var soundAlerts: Bool = true
     @AppStorage("pushNotifications") private var pushNotifications: Bool = true
     @AppStorage("safeTripAlert") private var safeTripAlert: Bool = true
-    @AppStorage("pourSoundEffects") private var pourSoundEffects: Bool = true
     @AppStorage("darkTheme") private var darkTheme: Bool = true
     @AppStorage("defaultRadiusKm") private var selectedRadiusKm: Int = 2
     @AppStorage("lokalLimit") private var selectedLokalLimit: Int = 25
@@ -151,8 +150,6 @@ struct SettingsView: View {
                             toggleRow(title: "Potisna obvestila", subtitle: "Obvestila o varni poti in spremljanje obiska na zaklenjenem zaslonu", isOn: $pushNotifications)
                             Divider().background(Color.white.opacity(0.08))
                             toggleRow(title: "Potrditev ali zavrnitev varne poti", subtitle: "Samodejni predlog klica taksija ob doseženem limitu pijač", isOn: $safeTripAlert)
-                            Divider().background(Color.white.opacity(0.08))
-                            toggleRow(title: "Zvočni učinki točenja", subtitle: "Sproži zvočno animacijo ob dodajanju piva na števcu", isOn: $pourSoundEffects)
                             Divider().background(Color.white.opacity(0.08))
                             toggleRow(title: "Nočni način šanka (Temna tema)", subtitle: "Privlačen temen videz za večerne izhode", isOn: $darkTheme)
                         }

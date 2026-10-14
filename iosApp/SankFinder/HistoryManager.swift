@@ -8,6 +8,34 @@ struct VisitRecord: Identifiable, Codable {
     var amount: Double
     var rating: Int // 1 do 5
     var note: String
+    var drinks: Int = 1
+    
+    enum CodingKeys: String, CodingKey {
+        case id, barName, address, date, amount, rating, note, drinks
+    }
+    
+    init(id: String = UUID().uuidString, barName: String, address: String, date: String, amount: Double, rating: Int = 5, note: String = "", drinks: Int = 1) {
+        self.id = id
+        self.barName = barName
+        self.address = address
+        self.date = date
+        self.amount = amount
+        self.rating = rating
+        self.note = note
+        self.drinks = drinks
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decodeIfPresent(String.self, forKey: .id) ?? UUID().uuidString
+        self.barName = try container.decode(String.self, forKey: .barName)
+        self.address = try container.decode(String.self, forKey: .address)
+        self.date = try container.decode(String.self, forKey: .date)
+        self.amount = try container.decode(Double.self, forKey: .amount)
+        self.rating = try container.decode(Int.self, forKey: .rating)
+        self.note = try container.decode(String.self, forKey: .note)
+        self.drinks = try container.decodeIfPresent(Int.self, forKey: .drinks) ?? 1
+    }
 }
 
 class HistoryManager: ObservableObject {
@@ -24,7 +52,7 @@ class HistoryManager: ObservableObject {
         saveVisits()
     }
     
-    func addVisit(barName: String, address: String, amount: Double = 0.0, rating: Int = 5, note: String = "") {
+    func addVisit(barName: String, address: String, amount: Double = 0.0, rating: Int = 5, note: String = "", drinks: Int = 1) {
         let formatter = DateFormatter()
         formatter.dateFormat = "d. M. yyyy ob HH:mm"
         let dateStr = formatter.string(from: Date())
@@ -35,13 +63,14 @@ class HistoryManager: ObservableObject {
             date: dateStr,
             amount: amount,
             rating: rating,
-            note: note
+            note: note,
+            drinks: drinks
         )
         visits.insert(newRecord, at: 0)
         saveVisits()
     }
     
-    func updateVisit(id: String, barName: String, address: String, amount: Double, rating: Int, note: String) {
+    func updateVisit(id: String, barName: String, address: String, amount: Double, rating: Int, note: String, drinks: Int = 1) {
         if let idx = visits.firstIndex(where: { $0.id == id }) {
             var existing = visits[idx]
             existing.barName = barName
@@ -49,6 +78,7 @@ class HistoryManager: ObservableObject {
             existing.amount = amount
             existing.rating = rating
             existing.note = note
+            existing.drinks = drinks
             visits[idx] = existing
             saveVisits()
         }
@@ -66,6 +96,10 @@ class HistoryManager: ObservableObject {
     
     var totalSpent: Double {
         visits.reduce(0.0) { $0 + $1.amount }
+    }
+    
+    var totalDrinks: Int {
+        visits.reduce(0) { $0 + $1.drinks }
     }
     
     private func saveVisits() {

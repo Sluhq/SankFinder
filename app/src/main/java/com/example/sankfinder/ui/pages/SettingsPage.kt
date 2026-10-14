@@ -108,7 +108,6 @@ fun SettingsPage(
     var soundAlerts by remember { mutableStateOf(true) }
     var pushNotifications by remember { mutableStateOf(true) }
     var safeTripAlert by remember { mutableStateOf(true) }
-    var pourSoundEffects by remember { mutableStateOf(true) }
     var selectedLokalLimit by remember { mutableIntStateOf(20) }
     var showCustomLimitDialog by remember { mutableStateOf(false) }
     var customLimitInput by remember { mutableStateOf("") }
@@ -484,18 +483,6 @@ fun SettingsPage(
                     thickness = 0.5.dp
                 )
 
-                // Zvočni efekti
-                SettingToggleRow(
-                    title = "Zvočni učinki točenja",
-                    subtitle = "Sproži zvočno animacijo ob dodajanju piva na števcu",
-                    checked = pourSoundEffects,
-                    onCheckedChange = { pourSoundEffects = it }
-                )
-
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f),
-                    thickness = 0.5.dp
-                )
 
                 // Temna tema
                 SettingToggleRow(

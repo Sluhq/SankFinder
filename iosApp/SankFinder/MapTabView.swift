@@ -9,6 +9,8 @@ struct MapTabView: View {
     @ObservedObject private var squad = SquadManager.shared
     
     @State private var centerCoord: CLLocationCoordinate2D?
+    @State private var centerTrigger: UUID = UUID()
+    @State private var hasInitialCenteredOnUser: Bool = false
     @State private var bars: [Lokal] = []
     @State private var selectedBar: Lokal?
     @State private var activeRoute: OsrmRoute?
@@ -24,6 +26,7 @@ struct MapTabView: View {
             // 1. ZEMLJEVID ČEZ CEL ZASLON
             CustomMapView(
                 centerCoordinate: $centerCoord,
+                centerTrigger: centerTrigger,
                 userHeading: locationManager.heading,
                 bars: bars,
                 squadMembers: squad.members,
@@ -124,7 +127,17 @@ struct MapTabView: View {
         .onAppear {
             GlobalSyncManager.shared.reportScreen("Zemljevid & Šanki")
             locationManager.requestPermission()
-            refreshBars()
+            
+            // Če je GPS lokacija že znana, takoj postavi kamero na uporabnika in poišči šanke okoli njega
+            if let loc = locationManager.location, locationManager.hasRealLocation {
+                hasInitialCenteredOnUser = true
+                centerCoord = loc
+                centerTrigger = UUID()
+                refreshBars()
+            } else {
+                // Če GPS še pridobiva signal, počakamo na didUpdateLocations, da se kamera ne postavlja napačno v center Ljubljane
+                locationManager.startUpdating()
+            }
             
             if let target = bridge.targetLokalForNavigation {
                 selectedBar = target
@@ -139,9 +152,23 @@ struct MapTabView: View {
                 bridge.targetLokalForNavigation = nil
             }
         }
+        .onChange(of: locationManager.hasRealLocation) { hasReal in
+            if hasReal, let loc = locationManager.location, !hasInitialCenteredOnUser {
+                hasInitialCenteredOnUser = true
+                centerCoord = loc
+                centerTrigger = UUID()
+                refreshBars()
+            }
+        }
         .onChange(of: locationManager.location?.latitude) { _ in
             if let loc = locationManager.location {
                 SquadManager.shared.updateLocation(lat: loc.latitude, lon: loc.longitude)
+                if !hasInitialCenteredOnUser {
+                    hasInitialCenteredOnUser = true
+                    centerCoord = loc
+                    centerTrigger = UUID()
+                    refreshBars()
+                }
             }
         }
         .alert(isPresented: $showAddedToHistoryAlert) {
@@ -384,8 +411,14 @@ struct MapTabView: View {
     private func centerOnUser() {
         if let loc = locationManager.location {
             centerCoord = loc
+            centerTrigger = UUID()
+            if bars.isEmpty {
+                refreshBars()
+            }
         } else {
+            locationManager.requestPermission()
             centerCoord = LocationManager.defaultCoordinate
+            centerTrigger = UUID()
         }
     }
     

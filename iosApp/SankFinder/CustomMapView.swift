@@ -79,9 +79,9 @@ class PubDotAnnotationView: MKAnnotationView {
         self.frame = CGRect(x: 0, y: 0, width: 26, height: 26)
         self.centerOffset = CGPoint(x: 0, y: 0)
         
-        // Glavni zeleni krog (#2E7D32)
+        // Glavni zeleni krog (#43A047 - svetlo zelena kot na Androidu)
         dotView.frame = CGRect(x: 1, y: 1, width: 24, height: 24)
-        dotView.backgroundColor = UIColor(red: 46/255, green: 125/255, blue: 50/255, alpha: 1.0)
+        dotView.backgroundColor = UIColor(red: 67/255, green: 160/255, blue: 71/255, alpha: 1.0)
         dotView.layer.cornerRadius = 12
         dotView.layer.borderWidth = 2.5
         dotView.layer.borderColor = UIColor.white.cgColor
@@ -102,11 +102,11 @@ class PubDotAnnotationView: MKAnnotationView {
         UIView.animate(withDuration: 0.15) {
             if isSelected {
                 self.transform = CGAffineTransform(scaleX: 1.25, y: 1.25)
-                self.dotView.backgroundColor = UIColor(red: 67/255, green: 160/255, blue: 71/255, alpha: 1.0)
-                self.innerDot.backgroundColor = UIColor(red: 255/255, green: 213/255, blue: 79/255, alpha: 1.0)
+                self.dotView.backgroundColor = UIColor(red: 46/255, green: 125/255, blue: 50/255, alpha: 1.0) // Temno zelena ob izbiri (#2E7D32)
+                self.innerDot.backgroundColor = UIColor(red: 255/255, green: 213/255, blue: 79/255, alpha: 1.0) // Zlata pika (#FFD54F)
             } else {
                 self.transform = .identity
-                self.dotView.backgroundColor = UIColor(red: 46/255, green: 125/255, blue: 50/255, alpha: 1.0)
+                self.dotView.backgroundColor = UIColor(red: 67/255, green: 160/255, blue: 71/255, alpha: 1.0) // Svetlo zelena kot na Androidu (#43A047)
                 self.innerDot.backgroundColor = UIColor.white
             }
         }
@@ -396,6 +396,7 @@ class NavigationRoutePolylineRenderer: MKPolylineRenderer {
 // MARK: - Glavni SwiftUI CustomMapView
 struct CustomMapView: UIViewRepresentable {
     @Binding var centerCoordinate: CLLocationCoordinate2D?
+    var centerTrigger: UUID = UUID()
     var userHeading: Double = 0.0
     var bars: [Lokal]
     var squadMembers: [SquadMember] = []
@@ -438,7 +439,13 @@ struct CustomMapView: UIViewRepresentable {
     func updateUIView(_ uiView: MKMapView, context: Context) {
         context.coordinator.currentUserView?.updateHeading(userHeading)
         
-        if let center = centerCoordinate, context.coordinator.lastCenteredId != "\(center.latitude),\(center.longitude)" {
+        // Sproži osredotočenje kamere ob klicu centerTrigger ali ko se spremeni centerCoordinate
+        if context.coordinator.lastCenterTrigger != centerTrigger, let center = centerCoordinate {
+            context.coordinator.lastCenterTrigger = centerTrigger
+            context.coordinator.lastCenteredId = "\(center.latitude),\(center.longitude)"
+            let region = MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012))
+            uiView.setRegion(region, animated: true)
+        } else if let center = centerCoordinate, context.coordinator.lastCenteredId != "\(center.latitude),\(center.longitude)" {
             context.coordinator.lastCenteredId = "\(center.latitude),\(center.longitude)"
             let region = MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012))
             uiView.setRegion(region, animated: true)
@@ -545,6 +552,7 @@ struct CustomMapView: UIViewRepresentable {
     class Coordinator: NSObject, MKMapViewDelegate {
         var parent: CustomMapView
         var lastCenteredId: String? = nil
+        var lastCenterTrigger: UUID? = nil
         var lastRouteCount: Int = 0
         weak var currentUserView: UserHeadingAnnotationView? = nil
         weak var currentManeuverView: CurvedManeuverAnnotationView? = nil
