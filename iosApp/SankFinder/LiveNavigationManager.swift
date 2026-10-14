@@ -31,7 +31,7 @@ class LiveNavigationManager: NSObject {
         postOrUpdateNotification(
             title: "↑ \(distText)",
             subtitle: "Začni peš pot do: \(targetName)",
-            body: "Peš \(walkingMin) min (\(distText)) • Prihod \(etaFormatted) • 🎯 \(targetName)",
+            body: "Peš \(walkingMin) min (\(distText)) • Prihod \(etaFormatted) • Cilj: \(targetName)",
             sound: true
         )
         
@@ -67,7 +67,7 @@ class LiveNavigationManager: NSObject {
         
         // Telo: Čas hoje, preostala razdalja, predviden prihod in ime lokala
         let progressBar = makeProgressBar(remaining: remainingDistance, total: initialTotalDistance)
-        let body = "Peš \(walkingMin) min (\(totalDistText)) • Prihod \(etaFormatted)\n\(progressBar)  🎯 \(targetName)"
+        let body = "Peš \(walkingMin) min (\(totalDistText)) • Prihod \(etaFormatted)\n\(progressBar)  Cilj: \(targetName)"
         
         // Zvočno in haptično opozorilo ob spremembi zavoja ali v bližini križišča (< 35 m)
         let currentBucket = Int(distanceToManeuver / 50.0)
@@ -157,7 +157,7 @@ class LiveNavigationManager: NSObject {
         } else if low.contains("polkrožno") || low.contains("u-turn") || low.contains("uturn") {
             return "↩"
         } else if low.contains("cilj") || low.contains("prispe") || low.contains("arrive") {
-            return "🎯"
+            return "●"
         } else {
             return "↑"
         }

@@ -207,7 +207,7 @@ struct HistoryView: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(.white)
                 if item.drinks > 0 {
-                    Text("\(item.drinks)x 🍺")
+                    Text("\(item.drinks) pijač")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(Theme.beerGold)
                         .padding(.horizontal, 6)
@@ -800,9 +800,10 @@ struct CameraReceiptScannerModalView: View {
                                             .foregroundColor(Theme.textMuted)
                                         
                                         ForEach(detectedDrinks) { item in
-                                            HStack {
-                                                Text(item.isAlcoholic ? "🍺" : "☕")
-                                                    .font(.system(size: 13))
+                                            HStack(spacing: 8) {
+                                                Circle()
+                                                    .fill(item.isAlcoholic ? Theme.beerGold : Theme.drajvGreen)
+                                                    .frame(width: 6, height: 6)
                                                 Text("\(item.quantity)x \(item.cleanName)")
                                                     .font(.system(size: 12, weight: .medium))
                                                     .foregroundColor(.white)
