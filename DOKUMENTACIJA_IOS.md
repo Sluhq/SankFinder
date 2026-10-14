@@ -179,9 +179,9 @@ class OSMTileOverlay: MKTileOverlay {
 8. **Plavajoči kompas za poravnavo proti severu:**  
    - Ko se zemljevid zasuče (`abs(mapHeading) > 5.0°`), se v zgornjem desnem delu prikaže plavajoči kompas.
    - Igla kompasa se v realnem času natančno vrti proti severu. Ob dotiku se kamera zemljevida z gladko animacijo poravna na sever (`heading = 0.0`).
-9. **Radij iskanja in limit lokalov:**  
-   - Na voljo so enake možnosti radija kot na Androidu: `1 km`, `2 km`, `3 km`, `5 km`.
-   - Število prikazanih lokalov je reaktivno povezano z nastavitvami (`@AppStorage("lokalLimit")`, privzeto 25 lokalov).
+9. **Centralna sinhronizacija radija in limita (Nastavitve):**  
+   - Radij iskanja (`1 km`, `2 km`, `3 km`, `5 km`) in limit lokalov sta centralno povezana prek `@AppStorage("defaultRadiusKm")` in `@AppStorage("lokalLimit")`.
+   - Zgornji del zemljevida je razbremenjen podvojenih menijev, seznam ([BarsListView.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/BarsListView.swift)) in zemljevid ([MapTabView.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/MapTabView.swift)) pa se ob spremembi v Nastavitvah samodejno in reaktivno ponovno naložita.
 
 ---
 
@@ -194,9 +194,9 @@ class OSMTileOverlay: MKTileOverlay {
 
 ---
 
-### 5.3 Živa Obvestila na Zaklenjenem Zaslonu (LiveNavigationManager.swift)
+### 5.3 Živa Obvestila na Zaklenjenem Zaslonu & Center za Obvestila (LiveNavigationManager.swift)
 
-Med aktivno peš navigacijo se v sistemskem centru za obvestila prikazuje dinamično obvestilo, oblikovano po zgledu sodobnih navigacijskih aplikacij (Google Maps / Apple Maps):
+Med aktivno peš navigacijo se v sistemskem centru za obvestila in na zaklenjenem zaslonu prikazuje dinamično obvestilo, oblikovano po zgledu sodobnih navigacijskih aplikacij (Google Maps / Apple Maps):
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -206,6 +206,7 @@ Med aktivno peš navigacijo se v sistemskem centru za obvestila prikazuje dinami
 └────────────────────────────────────────────────────────┘
 ```
 
+- **Prikaz brez prekrivanja ekrana:** V ospredju se obvestila dodajajo izključno v Center za obvestila (`.list`) in na zaklenjeni zaslon, medtem ko je pojavna pasica (`.banner`) izklopljena, tako da uporabniku med hojo nikoli ne zakrije zemljevida ali HUD vmesnika.
 - **Posodabljanje v realnem času:** Ob vsakem premiku se osvežijo razdalja do ovinka, predviden čas hoje in ime naslednje ulice.
 - **Prekinitev z enim dotikom:** Obvestilo vsebuje neposredno dejanje za zaustavitev navigacije brez odpiranja celotne aplikacije prek `NavigationBridge`.
 
@@ -249,7 +250,7 @@ Aplikacija vsebuje lokalni sistem računalniškega vida, ki ne potrebuje zunanji
   - Samodejni izračun odprtosti (`🟢 Odprto zdaj` / `🔴 Zaprto`) glede na trenutno uro s filtrom za samo odprte točke.
   - Gumb za takojšen zagon peš navigacije.
 - 💶 **Razdeli račun (Bill Splitter):** Enostaven vnos zneska, števila oseb in izbira napitnine.
-- 🚕 **Taksi klic z naključnimi dialogi:** Zaporedje med 3 in 6 šaljivih prepričevalnih oken z direktno povezavo do klicnih številk lokalnih taksi služb (Taxi Metro, Taxi Laguna).
+- 🚕 **Taksi klic z naključnimi dialogi:** Zaporedje med 3 in 6 šaljivih prepričevalnih oken z direktno povezavo do klicnih številk lokalnih taksi služb (Taxi Metro, Taxi Laguna). Vrstni red in uvodni dialog sta vsakič znova naključno premešana iz nabora 10 različnih hudomušnih situacij.
 
 ---
 

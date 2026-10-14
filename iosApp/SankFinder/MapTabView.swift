@@ -19,8 +19,7 @@ struct MapTabView: View {
     @State private var selectedBar: Lokal?
     @State private var activeRoute: OsrmRoute?
     @State private var currentStepIndex: Int = 0
-    @State private var isLoading: Bool = false
-    @State private var searchRadius: Int = 2000 // 2 km privzeto kot Android
+    @AppStorage("defaultRadiusKm") private var selectedRadiusKm: Int = 2
     @State private var errorMessage: String?
     @State private var showAddedToHistoryAlert: Bool = false
     @State private var showSquadSheet: Bool = false
@@ -204,6 +203,12 @@ struct MapTabView: View {
         .sheet(isPresented: $showSquadSheet) {
             SquadView()
         }
+        .onChange(of: selectedRadiusKm) { _ in
+            refreshBars()
+        }
+        .onChange(of: selectedLokalLimit) { _ in
+            refreshBars()
+        }
     }
     
     // MARK: - Zgornja vrstica brez oznake 'ŠankFinder' in brez emojijev
@@ -232,26 +237,6 @@ struct MapTabView: View {
             }
             
             Spacer()
-            
-            Menu {
-                Button("1 km") { searchRadius = 1000; refreshBars() }
-                Button("2 km (Privzeto)") { searchRadius = 2000; refreshBars() }
-                Button("3 km") { searchRadius = 3000; refreshBars() }
-                Button("5 km") { searchRadius = 5000; refreshBars() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "slider.horizontal.3")
-                    Text("\(searchRadius / 1000) km")
-                }
-                .font(.subheadline)
-                .fontWeight(.semibold)
-                .foregroundColor(.beerGold)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Theme.cardDark.opacity(0.92))
-                .cornerRadius(20)
-                .shadow(color: .black.opacity(0.35), radius: 4)
-            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -463,7 +448,7 @@ struct MapTabView: View {
                 let fetched = try await network.fetchNearbyBars(
                     lat: userPos.latitude,
                     lon: userPos.longitude,
-                    radius: searchRadius,
+                    radius: selectedRadiusKm * 1000,
                     limit: selectedLokalLimit
                 )
                 DispatchQueue.main.async {

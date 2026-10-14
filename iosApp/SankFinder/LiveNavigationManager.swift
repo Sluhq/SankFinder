@@ -8,7 +8,7 @@ import CoreLocation
 class LiveNavigationManager: NSObject {
     static let shared = LiveNavigationManager()
     
-    private let notificationId = "sankfinder_live_navigation"
+    let notificationId = "sankfinder_live_navigation"
     private var isNavigating = false
     private var initialTotalDistance: Double = 1.0
     private var lastManeuverText = ""
@@ -32,7 +32,7 @@ class LiveNavigationManager: NSObject {
             title: "↑ \(distText)",
             subtitle: "Začni peš pot do: \(targetName)",
             body: "Peš \(walkingMin) min (\(distText)) • Prihod \(etaFormatted) • Cilj: \(targetName)",
-            sound: true
+            sound: false
         )
         
         WatchConnectivityManager.shared.sendNavigationUpdate(
@@ -80,7 +80,7 @@ class LiveNavigationManager: NSObject {
             title: title,
             subtitle: subtitle,
             body: body,
-            sound: shouldSound
+            sound: false
         )
         
         WatchConnectivityManager.shared.sendNavigationUpdate(

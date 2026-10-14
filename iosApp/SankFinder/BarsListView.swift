@@ -7,6 +7,9 @@ struct BarsListView: View {
     @ObservedObject private var bridge = NavigationBridge.shared
     @ObservedObject private var history = HistoryManager.shared
     
+    @AppStorage("defaultRadiusKm") private var selectedRadiusKm: Int = 2
+    @AppStorage("lokalLimit") private var selectedLokalLimit: Int = 25
+    
     @State private var bars: [Lokal] = []
     @State private var searchQuery: String = ""
     @State private var isLoading: Bool = false
@@ -61,7 +64,7 @@ struct BarsListView: View {
                             Circle()
                                 .fill(Theme.drajvGreen)
                                 .frame(width: 8, height: 8)
-                            Text("Radij: 2 km")
+                            Text("Radij: \(selectedRadiusKm) km")
                                 .font(.system(size: 12))
                                 .foregroundColor(Theme.textMuted)
                         }
@@ -185,6 +188,12 @@ struct BarsListView: View {
             if hasReal {
                 loadBars()
             }
+        }
+        .onChange(of: selectedRadiusKm) { _ in
+            loadBars()
+        }
+        .onChange(of: selectedLokalLimit) { _ in
+            loadBars()
         }
     }
     
@@ -381,8 +390,8 @@ struct BarsListView: View {
                 let fetched = try await network.fetchNearbyBars(
                     lat: userPos.latitude,
                     lon: userPos.longitude,
-                    radius: 2000,
-                    limit: 40
+                    radius: selectedRadiusKm * 1000,
+                    limit: selectedLokalLimit
                 )
                 DispatchQueue.main.async {
                     self.bars = fetched

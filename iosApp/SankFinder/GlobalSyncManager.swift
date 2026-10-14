@@ -95,12 +95,14 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
         connect()
     }
     
-    // Zagotovi, da se potisna obvestila prikažejo tudi ko je aplikacija v ospredju
+    // Obvestila se shranijo v Center za obvestila (.list) in prikažejo na zaklenjenem zaslonu,
+    // VENDAR BREZ pojavnih pasic (.banner), da med uporabo aplikacije ne zakrivajo pogleda na zemljevid!
     func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         if #available(iOS 14.0, *) {
-            completionHandler([.banner, .sound, .badge, .list])
+            // Samo .list in .badge - brez .banner in brez zvoka, ki bi motil med hojo
+            completionHandler([.list, .badge])
         } else {
-            completionHandler([.alert, .sound, .badge])
+            completionHandler([])
         }
     }
     

@@ -42,19 +42,24 @@ struct ToolsView: View {
     @State private var selectedTipIndex: Int = 0
     let tipOptions = [0.0, 0.05, 0.10, 0.15]
     
-    // 5. TAKSI PREGOVARJANJE (3 do 6 stopenj)
+    // 5. TAKSI PREGOVARJANJE (3 do 6 stopenj, VEDNO naključno premešan vrstni red)
     @State private var isTaxiConvincing: Bool = false
     @State private var currentTaxiConvinceIndex: Int = 0
     @State private var maxTaxiSteps: Int = 4
     @State private var showFinalTaxiModal: Bool = false
+    @State private var activeTaxiSteps: [(String, String, String, String)] = []
     
-    let allTaxiSteps = [
+    let allTaxiStepsPool = [
         ("Si res prepričan, da odnehaš?", "Noč v mestu je še mlada, pipe pa še točijo! Res greš že domov?", "Imaš prav, še eno rundo!", "Res želim domov..."),
         ("Čakaj malo... A res že zdaj?", "Tvoji prijatelji bodo rekli, da si copata! Šele pred kratkim smo začeli!", "Bom še ostal!", "Vseeno klic taksija"),
         ("Tvoja jetra pravijo: Zdrži!", "Zdrži vsaj še en deci cvička ali eno malo točeno pivo. Ne bodi takšen!", "Ok, še eno pivo!", "Ne, res grem domov"),
         ("Kaj pa Burek pavza?!", "Zlato pravilo šankanja: Brez vročega bureka se ne gre spat! Pojdi najprej na burek pavzo!", "Grem na burek pavzo!", "Ne, taksi prosim"),
         ("Legende nikoli ne obupajo!", "Ali je kdo kdaj postal legenda tako, da je šel spat pred polnočjo? Nikakor!", "Ostajam do konca!", "Jaz nisem legenda, grem spat"),
-        ("Pivo brez tebe bo žalostno...", "Natakar ravno odpira nov sod, ti bi pa šel domov? Daj no, še en požirek!", "Še en požirek!", "Ne, taksi zdaj")
+        ("Pivo brez tebe bo žalostno...", "Natakar ravno odpira nov sod, ti bi pa šel domov? Daj no, še en požirek!", "Še en požirek!", "Ne, taksi zdaj"),
+        ("Poglej na uro... Prerano je!", "Taksi ob tej uri? Saj te bo še taksist vprašal, zakaj si tako zgoden! Daj še en krog!", "Prav imaš, še en krog!", "Ne zanima me, taksi!"),
+        ("Runda je ravno naročena!", "Nekdo iz klape ravno naroča novo rundo, ti pa proti izhodu? To je greh!", "Hitro nazaj za mizo!", "Jaz grem vseeno..."),
+        ("Tvoja postelja lahko počaka!", "Postelja nikamor ne bo pobegnila, dobra družba in hladna pijača pa ja!", "Ostanem še malo!", "Spati moram..."),
+        ("Zadnji mohikanec?", "Pravi žurerji zaprejo lokal skupaj z natakarjem. Ti bi pa obupal na pol poti?", "Grem do zaprtja!", "Moje meje so dosežene...")
     ]
     
     @State private var showSquadSheet: Bool = false
@@ -130,7 +135,9 @@ struct ToolsView: View {
             taxiModalView
         }
         .alert(isPresented: $isTaxiConvincing) {
-            let step = allTaxiSteps[currentTaxiConvinceIndex % allTaxiSteps.count]
+            let step = activeTaxiSteps.indices.contains(currentTaxiConvinceIndex)
+                ? activeTaxiSteps[currentTaxiConvinceIndex]
+                : (allTaxiStepsPool.randomElement()!)
             return Alert(
                 title: Text(step.0),
                 message: Text(step.1),
@@ -138,7 +145,7 @@ struct ToolsView: View {
                     isTaxiConvincing = false
                 },
                 secondaryButton: .destructive(Text(step.3)) {
-                    if currentTaxiConvinceIndex + 1 < maxTaxiSteps {
+                    if currentTaxiConvinceIndex + 1 < maxTaxiSteps && currentTaxiConvinceIndex + 1 < activeTaxiSteps.count {
                         currentTaxiConvinceIndex += 1
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                             isTaxiConvincing = true
@@ -789,7 +796,8 @@ struct ToolsView: View {
     }
     
     private func startTaxiConvincing() {
-        maxTaxiSteps = Int.random(in: 3...6)
+        activeTaxiSteps = allTaxiStepsPool.shuffled()
+        maxTaxiSteps = min(activeTaxiSteps.count, Int.random(in: 3...6))
         currentTaxiConvinceIndex = 0
         isTaxiConvincing = true
     }
