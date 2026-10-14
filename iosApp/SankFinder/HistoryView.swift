@@ -320,8 +320,8 @@ struct HistoryView: View {
                     showBackButton: true,
                     onBack: {
                         if isEditing { editingRecord = nil } else { showAddModal = false }
-                    }
-                ) {
+                    },
+                    actions: {
                     Button("Shrani") {
                         let amt = Double(inputAmount.replacingOccurrences(of: ",", with: ".")) ?? 0.0
                         let name = inputBarName.trimmingCharacters(in: .whitespaces).isEmpty ? "Neznan šank" : inputBarName
@@ -352,7 +352,7 @@ struct HistoryView: View {
                     }
                     .font(.system(size: 15, weight: .bold))
                     .foregroundColor(Theme.beerGold)
-                }
+                })
                 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {

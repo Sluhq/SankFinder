@@ -18,14 +18,15 @@ struct SquadView: View {
                     title: squad.activeRoom != nil ? squad.activeRoom!.name : "Pivska Klapa",
                     showBackButton: false,
                     actions: {
-                    if squad.activeRoom != nil {
-                        Button(action: { squad.leaveRoom() }) {
-                            Text("Zapusti")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(Theme.drajvRed)
+                        if squad.activeRoom != nil {
+                            Button(action: { squad.leaveRoom() }) {
+                                Text("Zapusti")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(Theme.drajvRed)
+                            }
                         }
                     }
-                }
+                )
                 
                 if let alert = squad.bannerAlert {
                     HStack {
