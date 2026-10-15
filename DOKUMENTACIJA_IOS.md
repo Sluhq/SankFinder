@@ -185,12 +185,19 @@ class OSMTileOverlay: MKTileOverlay {
 
 ---
 
-### 5.2 Lokacija & Kompas v Ozadju (LocationManager.swift)
+### 5.2 Lokacija, Filtriranje Natančnosti & Sinhronizirano Stanje (LocationManager.swift & NetworkManager.swift)
 
-- Skrbi za posodobitve GPS koordinat prek `CLLocationManager`.
-- Uporablja natančnost `kCLLocationAccuracyBestForNavigation` ter natančna filtra: `distanceFilter = 3.0 m` in `headingFilter = 3.0°`.
-- Vključuje popolno podporo za ozadje med navigacijo: `allowsBackgroundLocationUpdates = true` in `pausesLocationUpdatesAutomatically = false`.
-- Zaznava smer kompasa (`startUpdatingHeading()`), kar omogoča vrtenje usmerjevalnega stožca modre pike uporabnika (`UserHeadingAnnotationView`).
+- **Filtriranje grobih in zastarelih GPS meritev:**
+  - `LocationManager` zavrne meritve z negativno natančnostjo (`horizontalAccuracy < 0`) ter zastarele meritve iz sistemskega predpomnilnika (`abs(timestamp.timeIntervalSinceNow) > 120 s`).
+  - Nastavljen je `activityType = .fitness`, natančnost `kCLLocationAccuracyBestForNavigation` ter natančen filter premika: `distanceFilter = 2.0 m` in `headingFilter = 3.0°`.
+  - Aplikacija beleži natančnost (`accuracy`). Ko naprava pridobi natančen satelitski GPS sprejem (`accuracy <= 65 m`), [MapTabView.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/MapTabView.swift) samodejno preusmeri kamero na pravo točko in osveži lokale za novo lokacijo.
+  - Dinamično zaznavanje premika: ko se uporabnik premakne za več kot **250 metrov**, se lokali samodejno ponovno naložijo za novo območje.
+- **Enoten vir resnice (Single Source of Truth) v `NetworkManager.shared`:**
+  - `NetworkManager.shared` upravlja enoten `@Published var bars: [Lokal] = []`, kar zagotavlja, da sta zavihek **Zemljevid** in zavihek **Šanki** vedno 100 % usklajena brez podvojenih klicev API.
+  - Vgrajen je seznam 15 zanesljivih lokalov v Ljubljani (Center, Krakovo, Šiška, Bežigrad), ki se samodejno prikažejo, če je omrežna povezava motena ali Geoapify API začasno nedostopen.
+- **Kompas in ozadje:**
+  - Vključuje popolno podporo za ozadje med navigacijo: `allowsBackgroundLocationUpdates = true` in `pausesLocationUpdatesAutomatically = false`.
+  - Zaznava smer kompasa (`startUpdatingHeading()`), kar omogoča vrtenje usmerjevalnega stožca modre pike uporabnika (`UserHeadingAnnotationView`).
 
 ---
 
