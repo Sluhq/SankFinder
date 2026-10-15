@@ -177,10 +177,11 @@ class OSMTileOverlay: MKTileOverlay {
 7. **Dinamično sledenje korakom navigacije (< 18 m) & Razdalja po cesti:**  
    - Ko se uporabnik med peš navigacijo približa naslednjemu manevru na manj kot **18 metrov**, aplikacija v `MapTabView.swift` samodejno preskoči na naslednji korak (`currentStepIndex += 1`).
    - Preostala razdalja se ne računa kot zračna razdalja, temveč z namensko funkcijo `calculateRemainingRouteDistance` vzdolž **dejanskih koordinat OSRM polilinije**.
-8. **Avtomatska rotacija in zvezno sledenje kamere (Google Maps Course-Up slog):**  
-   - Ob zagonu navigacije se `MKMapCamera` avtomatsko nastavi na uporabnikovo lokacijo s peš razdaljo (`fromDistance = 320.0 m`) ter zasuče v smer začetnega odseka poti (`initialBearing`).
-   - Med hojo kamera zvezno sledi uporabniku v središču zaslona (`isFollowingUser = true`), usmerjenost pa se dinamično prilagaja smeri ceste/gibanja (`MKMapCamera.heading`), tako da je pot pred nami vedno zgoraj.
-   - Če uporabnik med navigacijo ročno podrsne po zemljevidu (`UIPanGestureRecognizer`), se samodejno sledenje začasno ustavi in prikaže se plavajoči gumb **"Centriraj"**. S klikom nanj se kamera takoj znova zaklene na uporabnika in zasuče v smer hoje.
+8. **Avtomatska rotacija in zvezno sledenje kamere v SMER HOJE (Route Course-Up slog):**  
+   - **Zaklepanje na smer hoje (brez nihanja kompasa):** Usmerjenost kamere in zemljevida med aktivno navigacijo je strogo vezana na **vektor OSRM poti/ulice** (`calculateRouteWalkingBearing`), ki gleda 12–18 m naprej vzdolž trase. Nihanje telefona v roki in premiki kompasa med hojo tako ne vplivajo več na kamero, ki ostaja povsem mirna vzdolž ulice.
+   - Ob zagonu navigacije se `MKMapCamera` avtomatsko nastavi na uporabnikovo lokacijo s peš razdaljo (`fromDistance = 320.0 m`) ter zasuče v smer začetnega odseka poti.
+   - Med hojo kamera zvezno sledi uporabniku v središču zaslona (`isFollowingUser = true`), modra pika s puščico pa stabilno kaže naravnost naprej v smeri hoje. Kamera se zasuče le, ko uporabnik dejansko zavije na novo cesto.
+   - Če uporabnik med navigacijo ročno podrsne po zemljevidu (`UIPanGestureRecognizer`), se samodejno sledenje začasno ustavi in prikaže se plavajoči gumb **"Centriraj"**. S klikom nanj se kamera takoj znova zaklene na uporabnika in zasuče v smer hoje vzdolž trase.
    - Ob prekinitvi navigacije ("Končaj" ali "X") se kamera zvezno poravna nazaj na sever (`heading = 0.0`) ter povrne običajen pregled.
 9. **Plavajoči kompas za poravnavo proti severu:**  
    - Ko se zemljevid zasuče (`abs(mapHeading) > 5.0°`), se v zgornjem desnem delu prikaže plavajoči kompas.

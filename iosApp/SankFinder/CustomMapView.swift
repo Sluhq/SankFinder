@@ -637,27 +637,33 @@ struct CustomMapView: UIViewRepresentable {
     
     func updateUIView(_ uiView: MKMapView, context: Context) {
         context.coordinator.parent = self
-        context.coordinator.currentUserView?.updateHeading(userHeading, mapHeading: uiView.camera.heading)
+        // Med aktivno navigacijo puščica uporabnika vedno stabilno kaže v smer hoje naravnost naprej,
+        // brez nihanja zaradi kompasa telefona!
+        if isNavigating && isFollowingUser {
+            context.coordinator.currentUserView?.updateHeading(uiView.camera.heading, mapHeading: uiView.camera.heading)
+        } else {
+            context.coordinator.currentUserView?.updateHeading(userHeading, mapHeading: uiView.camera.heading)
+        }
         
-        // 1. Upravljanje navigacijske kamere (Sledenje uporabniku v smeri hoje - Google Maps slog)
+        // 1. Upravljanje navigacijske kamere (Sledenje uporabniku v smeri HOJE - stabilno vzdolž ulice brez tresenja)
         if isNavigating {
             if !context.coordinator.wasNavigating {
-                // Ravnokar smo začeli navigacijo: osredotoči se na uporabnika in obrni v smer poti
+                // Začetek navigacije: usmeri kamero v smer začetka poti
                 context.coordinator.wasNavigating = true
                 context.coordinator.wasFollowingUser = true
                 
+                let center = userLocation ?? centerCoordinate ?? LocationManager.defaultCoordinate
                 let initialBearing: Double
                 if let target = targetBearing {
                     initialBearing = target
+                } else if let walkingBearing = calculateRouteWalkingBearing(userLoc: center, routeCoords: routeCoordinates) {
+                    initialBearing = walkingBearing
                 } else if routeCoordinates.count >= 2 {
                     initialBearing = calculateBearing(from: routeCoordinates[0], to: routeCoordinates[1])
-                } else if userHeading > 0 {
-                    initialBearing = userHeading
                 } else {
                     initialBearing = 0.0
                 }
                 
-                let center = userLocation ?? centerCoordinate ?? LocationManager.defaultCoordinate
                 let navCamera = MKMapCamera(
                     lookingAtCenter: center,
                     fromDistance: 320.0,
@@ -666,23 +672,14 @@ struct CustomMapView: UIViewRepresentable {
                 )
                 uiView.setCamera(navCamera, animated: true)
             } else if isFollowingUser, let userCoord = userLocation {
-                // Med aktivno hojo: kamera zvezno sledi uporabniku v središču in se obrača v smer hoje
+                // Med aktivno hojo: kamera zvezno sledi uporabniku v središču in je STABILNO usmerjena v smer hoje vzdolž ulice
                 let targetHeading: Double
                 if let target = targetBearing {
                     targetHeading = target
-                } else if currentStepIndex < routeSteps.count,
-                          let loc = routeSteps[currentStepIndex].maneuver?.location, loc.count >= 2 {
-                    let stepCoord = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
-                    let d = distanceBetween(userCoord, stepCoord)
-                    if d > 12.0 {
-                        targetHeading = calculateBearing(from: userCoord, to: stepCoord)
-                    } else if userHeading > 0 {
-                        targetHeading = userHeading
-                    } else {
-                        targetHeading = uiView.camera.heading
-                    }
-                } else if userHeading > 0 {
-                    targetHeading = userHeading
+                } else if let walkingBearing = calculateRouteWalkingBearing(userLoc: userCoord, routeCoords: routeCoordinates) {
+                    targetHeading = walkingBearing
+                } else if routeCoordinates.count >= 2 {
+                    targetHeading = calculateBearing(from: routeCoordinates[0], to: routeCoordinates[1])
                 } else {
                     targetHeading = uiView.camera.heading
                 }
@@ -692,7 +689,8 @@ struct CustomMapView: UIViewRepresentable {
                 let hDiff = abs(curCam.heading - targetHeading)
                 let becameFollowing = (!context.coordinator.wasFollowingUser && isFollowingUser)
                 
-                if dist > 1.5 || hDiff > 4.0 || becameFollowing {
+                // Posodobi kamero le ob dejanskem premiku ali zavoju na novo ulico (prepreči nihanje)
+                if dist > 2.0 || hDiff > 4.0 || becameFollowing {
                     let followCam = MKMapCamera(
                         lookingAtCenter: userCoord,
                         fromDistance: 320.0,
@@ -892,7 +890,11 @@ struct CustomMapView: UIViewRepresentable {
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             let heading = mapView.camera.heading
             currentManeuverView?.updateRotation(mapHeading: heading)
-            currentUserView?.updateHeading(parent.userHeading, mapHeading: heading)
+            if parent.isNavigating && parent.isFollowingUser {
+                currentUserView?.updateHeading(heading, mapHeading: heading)
+            } else {
+                currentUserView?.updateHeading(parent.userHeading, mapHeading: heading)
+            }
             if abs(parent.mapHeading - heading) > 0.5 {
                 DispatchQueue.main.async {
                     self.parent.mapHeading = heading
@@ -1003,4 +1005,57 @@ private func distanceBetween(_ c1: CLLocationCoordinate2D, _ c2: CLLocationCoord
     let loc1 = CLLocation(latitude: c1.latitude, longitude: c1.longitude)
     let loc2 = CLLocation(latitude: c2.latitude, longitude: c2.longitude)
     return loc1.distance(from: loc2)
+}
+
+private func calculateRouteWalkingBearing(userLoc: CLLocationCoordinate2D, routeCoords: [CLLocationCoordinate2D]) -> Double? {
+    guard routeCoords.count >= 2 else { return nil }
+    
+    // 1. Poišči točko na trasi, ki je najbližje uporabniku
+    var nearestIdx = 0
+    var nearestDist = Double.greatestFiniteMagnitude
+    for (i, pt) in routeCoords.enumerated() {
+        let d = distanceBetween(userLoc, pt)
+        if d < nearestDist {
+            nearestDist = d
+            nearestIdx = i
+        }
+    }
+    
+    // 2. Poišči točko naprej vzdolž trase, ki je oddaljena vsaj 12-18 metrov
+    // s tem zagotovimo stabilen kot ceste vzdolž ulice brez kakršnegakoli tresenja
+    var lookAheadIdx = nearestIdx + 1
+    while lookAheadIdx < routeCoords.count {
+        let targetPt = routeCoords[lookAheadIdx]
+        if distanceBetween(userLoc, targetPt) >= 12.0 {
+            break
+        }
+        lookAheadIdx += 1
+    }
+    
+    if lookAheadIdx >= routeCoords.count {
+        lookAheadIdx = routeCoords.count - 1
+    }
+    
+    // 3. Če je uporabnik blizu poti (<30m), vzami natančen vektor ceste med točkami poti
+    // (tako se popolnoma odpravi vpliv GPS bočnega odstopanja med pločnikom in cestiščem)
+    let aheadPoint = routeCoords[lookAheadIdx]
+    let fromPoint: CLLocationCoordinate2D
+    if nearestDist < 30.0 {
+        if nearestIdx < lookAheadIdx {
+            fromPoint = routeCoords[nearestIdx]
+        } else if lookAheadIdx > 0 {
+            fromPoint = routeCoords[lookAheadIdx - 1]
+        } else {
+            fromPoint = userLoc
+        }
+    } else {
+        // Če je uporabnik oddaljen od poti, ga usmeri nazaj proti najbližji točki
+        return calculateBearing(from: userLoc, to: routeCoords[nearestIdx])
+    }
+    
+    if aheadPoint.latitude != fromPoint.latitude || aheadPoint.longitude != fromPoint.longitude {
+        return calculateBearing(from: fromPoint, to: aheadPoint)
+    }
+    
+    return nil
 }

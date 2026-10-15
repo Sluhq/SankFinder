@@ -316,7 +316,7 @@ fun MapMainPage(
                 mapView.controller.setZoom(18.5)
                 mapView.controller.animateTo(targetGeo)
             }
-            val initialBearing = mapNavViewModel.getTargetNavigationBearing() ?: userHeading
+            val initialBearing = mapNavViewModel.getRouteWalkingBearing() ?: 0f
             val orientation = (360f - (initialBearing % 360f)) % 360f
             mapView.mapOrientation = orientation
             mapOrientationDeg = orientation
@@ -329,8 +329,18 @@ fun MapMainPage(
         }
     }
 
-    // Posodobitev položaja modre pikice uporabnika z gladko animacijo hoje in sledenjem kamere
-    LaunchedEffect(userLocation, isNavigating, isTrackingUser, userHeading) {
+    // Ločeno posodabljanje smeri kompasa na modri piki SAMO kadar ni aktivne navigacije
+    LaunchedEffect(userHeading) {
+        if (!isNavigating || !isTrackingUser) {
+            userMarkerRef?.let { marker ->
+                marker.rotation = -userHeading
+                mapView.postInvalidate()
+            }
+        }
+    }
+
+    // Posodobitev položaja modre pikice uporabnika z gladko animacijo hoje in stabilnim sledenjem v smeri hoje
+    LaunchedEffect(userLocation, isNavigating, isTrackingUser) {
         val loc = userLocation ?: return@LaunchedEffect
         val targetGeo = GeoPoint(loc.latitude, loc.longitude)
 
@@ -350,22 +360,23 @@ fun MapMainPage(
         if (isTrackingUser) {
             mapView.controller.animateTo(targetGeo)
             if (isNavigating) {
-                val navBearing = if (loc.hasBearing() && loc.bearing != 0f) {
-                    loc.bearing
-                } else {
-                    mapNavViewModel.getTargetNavigationBearing() ?: userHeading
-                }
-                val newOrientation = (360f - (navBearing % 360f)) % 360f
-                if (kotlin.math.abs(mapView.mapOrientation - newOrientation) > 2.5f) {
-                    mapView.mapOrientation = newOrientation
-                    mapOrientationDeg = newOrientation
+                // STABILNA SMER HOJE VZDOLŽ TRASE - brez tresenja ali nihanja kompasa telefona!
+                val walkingBearing = mapNavViewModel.getRouteWalkingBearing()
+                if (walkingBearing != null) {
+                    val targetOrientation = (360f - (walkingBearing % 360f)) % 360f
+                    val currentOrientation = mapView.mapOrientation
+                    val diff = ((targetOrientation - currentOrientation + 540f) % 360f) - 180f
+                    if (kotlin.math.abs(diff) > 3.0f) {
+                        mapView.mapOrientation = targetOrientation
+                        mapOrientationDeg = targetOrientation
+                    }
                 }
             }
         }
 
         if (marker != null && marker.position != null) {
             if (isNavigating && isTrackingUser) {
-                marker.rotation = 0f // Kaže naravnost naprej (gor na zaslonu)
+                marker.rotation = 0f // Kaže naravnost naprej (gor na zaslonu) v smeri hoje
             } else {
                 marker.rotation = -userHeading
             }
@@ -774,15 +785,13 @@ fun MapMainPage(
                             val targetGeo = GeoPoint(loc.latitude, loc.longitude)
                             mapView.controller.setZoom(18.5)
                             mapView.controller.animateTo(targetGeo)
-                            val navBearing = if (loc.hasBearing() && loc.bearing != 0f) {
-                                loc.bearing
-                            } else {
-                                mapNavViewModel.getTargetNavigationBearing() ?: userHeading
+                            val walkingBearing = mapNavViewModel.getRouteWalkingBearing()
+                            if (walkingBearing != null) {
+                                val newOrientation = (360f - (walkingBearing % 360f)) % 360f
+                                mapView.mapOrientation = newOrientation
+                                mapOrientationDeg = newOrientation
+                                mapView.postInvalidate()
                             }
-                            val newOrientation = (360f - (navBearing % 360f)) % 360f
-                            mapView.mapOrientation = newOrientation
-                            mapOrientationDeg = newOrientation
-                            mapView.postInvalidate()
                         }
                     }
                 ) {

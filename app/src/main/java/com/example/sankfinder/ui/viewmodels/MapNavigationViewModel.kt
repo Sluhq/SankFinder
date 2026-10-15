@@ -169,6 +169,7 @@ class MapNavigationViewModel : ViewModel() {
         _currentStepIndex.value = 0
         _hasArrived.value = false
         _routeErrorMessage.value = null
+        lastStableWalkingBearing = null
     }
 
     private fun checkNavigationProgress(location: Location) {
@@ -252,56 +253,100 @@ class MapNavigationViewModel : ViewModel() {
         return if (idx + 1 < steps.size) steps[idx + 1] else steps.last()
     }
 
+    private var lastStableWalkingBearing: Float? = null
+
     /**
-     * Vrne ciljno usmeritev (bearing v stopinjah) za usmeritev kamere v smeri hoje (Google Maps slog).
+     * Vrne natančno in stabilno smer hoje vzdolž trase (v stopinjah 0..360),
+     * usmerjeno vzdolž ulice s pogledom 12-18m naprej.
+     * Popolnoma neodvisno od nihanja kompasa v telefonu med hojo (Google Maps slog).
      */
-    fun getTargetNavigationBearing(): Float? {
-        val userLoc = _userLocation.value ?: return null
-        
-        // 1. Če ima prihajajoči manever veljavne koordinate in je oddaljen več kot 8m
-        val step = getCurrentStep()
-        val loc = step?.maneuver?.location
-        if (loc != null && loc.size >= 2) {
-            val manLat = loc[1]
-            val manLon = loc[0]
-            val destLoc = Location("man").apply {
-                latitude = manLat
-                longitude = manLon
-            }
-            if (userLoc.distanceTo(destLoc) > 8.0f) {
-                val b = userLoc.bearingTo(destLoc)
-                return (b + 360f) % 360f
-            }
-        }
-        
-        // 2. Če imamo točke rute, izračunaj smer vzdolž naslednjega odseka poti
+    fun getRouteWalkingBearing(): Float? {
+        val userLoc = _userLocation.value
         val points = _routePoints.value
-        if (points.size >= 2) {
-            var minIdx = 0
-            var minDist = Float.MAX_VALUE
-            for (i in 0 until points.size - 1) {
-                val p = points[i]
-                val pLoc = Location("p").apply {
-                    latitude = p.latitude
-                    longitude = p.longitude
-                }
-                val d = userLoc.distanceTo(pLoc)
-                if (d < minDist) {
-                    minDist = d
-                    minIdx = i
-                }
+        if (points.size < 2) {
+            return lastStableWalkingBearing
+        }
+
+        if (userLoc == null) {
+            val p0 = points[0]
+            val p1 = points[1]
+            val l0 = Location("l0").apply { latitude = p0.latitude; longitude = p0.longitude }
+            val l1 = Location("l1").apply { latitude = p1.latitude; longitude = p1.longitude }
+            val b = (l0.bearingTo(l1) + 360f) % 360f
+            lastStableWalkingBearing = b
+            return b
+        }
+
+        // 1. Poišči točko na trasi, ki je najbližje uporabniku
+        var nearestIdx = 0
+        var minDist = Float.MAX_VALUE
+        for (i in points.indices) {
+            val p = points[i]
+            val pLoc = Location("p").apply {
+                latitude = p.latitude
+                longitude = p.longitude
             }
-            val nextIdx = (minIdx + 1).coerceAtMost(points.size - 1)
-            val p1 = points[minIdx]
-            val p2 = points[nextIdx]
-            if (p1.latitude != p2.latitude || p1.longitude != p2.longitude) {
-                val l1 = Location("l1").apply { latitude = p1.latitude; longitude = p1.longitude }
-                val l2 = Location("l2").apply { latitude = p2.latitude; longitude = p2.longitude }
-                val b = l1.bearingTo(l2)
-                return (b + 360f) % 360f
+            val d = userLoc.distanceTo(pLoc)
+            if (d < minDist) {
+                minDist = d
+                nearestIdx = i
             }
         }
-        
-        return null
+
+        // 2. Poišči točko naprej vzdolž trase, oddaljeno vsaj 12-18 metrov za stabilen vektor ceste
+        var lookAheadIdx = nearestIdx + 1
+        while (lookAheadIdx < points.size) {
+            val aheadP = points[lookAheadIdx]
+            val aheadLoc = Location("ahead").apply {
+                latitude = aheadP.latitude
+                longitude = aheadP.longitude
+            }
+            if (userLoc.distanceTo(aheadLoc) >= 12.0f) {
+                break
+            }
+            lookAheadIdx++
+        }
+
+        if (lookAheadIdx >= points.size) {
+            lookAheadIdx = points.size - 1
+        }
+
+        // 3. Če je uporabnik blizu poti (<30m), vzami natančen vektor ceste med točkami poti
+        // (tako se popolnoma odpravi nihanje telefona in bočni drift GPS)
+        val targetPoint = points[lookAheadIdx]
+        val fromLoc: Location
+        if (minDist < 30.0f) {
+            fromLoc = if (nearestIdx < lookAheadIdx) {
+                val pNear = points[nearestIdx]
+                Location("from").apply { latitude = pNear.latitude; longitude = pNear.longitude }
+            } else if (lookAheadIdx > 0) {
+                val pPrev = points[lookAheadIdx - 1]
+                Location("from").apply { latitude = pPrev.latitude; longitude = pPrev.longitude }
+            } else {
+                userLoc
+            }
+        } else {
+            // Če je uporabnik zunaj poti, ga usmeri nazaj proti najbližji točki
+            val pNear = points[nearestIdx]
+            val targetNearLoc = Location("near").apply { latitude = pNear.latitude; longitude = pNear.longitude }
+            val b = (userLoc.bearingTo(targetNearLoc) + 360f) % 360f
+            lastStableWalkingBearing = b
+            return b
+        }
+
+        val targetLoc = Location("target").apply {
+            latitude = targetPoint.latitude
+            longitude = targetPoint.longitude
+        }
+
+        if (fromLoc.latitude != targetLoc.latitude || fromLoc.longitude != targetLoc.longitude) {
+            val b = (fromLoc.bearingTo(targetLoc) + 360f) % 360f
+            lastStableWalkingBearing = b
+            return b
+        }
+
+        return lastStableWalkingBearing
     }
+
+    fun getTargetNavigationBearing(): Float? = getRouteWalkingBearing()
 }
