@@ -1,6 +1,6 @@
 # 🍎 ŠankFinder iOS - Celovita Programerska Dokumentacija & Arhitektura
 
-> **Različica aplikacije:** 1.2.0 (Build 36)  
+> **Različica aplikacije:** 1.2.0 (Build 37)  
 > **Glavni jezik:** Swift 5.9+  
 > **UI ogrodje:** SwiftUI + UIKit (MapKit integracija prek `UIViewRepresentable`)  
 > **Ciljna platforma:** iOS 16.0+, watchOS 9.0+  
@@ -15,15 +15,16 @@
 4. [Navigacijski Sistem & Spodnja Vrstica (5 zavihkov)](#4-navigacijski-sistem--spodnja-vrstica-5-zavihkov)
 5. [Ključni Moduli & Tehnične Rešitve](#5-ključni-moduli--tehnične-rešitve)
    - [5.1 Zemljevid & OpenStreetMap Over-Zoom Podpora (CustomMapView.swift)](#51-zemljevid--openstreetmap-over-zoom-podpora-custommapviewswift)
-   - [5.2 Lokacija & Kompas v Ozadju (LocationManager.swift)](#52-lokacija--kompas-v-ozadju-locationmanagerswift)
+   - [5.2 Lokacija, Filtriranje Natančnosti & Sinhronizirano Stanje (LocationManager.swift & NetworkManager.swift)](#52-lokacija-filtriranje-natančnosti--sinhronizirano-stanje-locationmanagerswift--networkmanagerswift)
    - [5.3 Živa Obvestila na Zaklenjenem Zaslonu (LiveNavigationManager.swift)](#53-živa-obvestila-na-zaklenjenem-zaslonu-livenavigationmanagerswift)
    - [5.4 Podpora za Apple Watch (WatchConnectivityManager.swift)](#54-podpora-za-apple-watch-watchconnectivitymanagerswift)
    - [5.5 Prepoznavanje Računov z Apple Vision OCR & QR (HistoryManager.swift)](#55-prepoznavanje-računov-z-apple-vision-ocr--qr-historymanagerswift)
    - [5.6 Orodja & Igre (ToolsView.swift)](#56-orodja--igre-toolsviewswift)
-   - [5.7 Pivska Klapa (SquadManager.swift & SquadView.swift)](#57-pivska-klapa-squadmanagerswift--squadviewswift)
+   - [5.7 Pivska Klapa & Tracker Meni (SquadManager.swift & SquadView.swift)](#57-pivska-klapa--tracker-meni-squadmanagerswift--squadviewswift)
    - [5.8 Nastavitve & Globalno Uravnavanje Tipkovnice](#58-nastavitve--globalno-uravnavanje-tipkovnice)
 6. [Postopek Gradnje & Generiranje IPA Paketa (CI/CD)](#6-postopek-gradnje--generiranje-ipa-paketa-cicd)
-7. [Navodila za Razvijalce & Sinhronizacija z Androidom](#7-navodila-za-razvijalce--sinhronizacija-z-androidom)
+7. [Primerjalna Matrika Funkcionalnosti (iOS vs Android)](#7-primerjalna-matrika-funkcionalnosti-ios-vs-android)
+8. [Navodila za Razvijalce & Sinhronizacija z Androidom](#8-navodila-za-razvijalce--sinhronizacija-z-androidom)
 
 ---
 
@@ -257,21 +258,25 @@ Aplikacija vsebuje lokalni sistem računalniškega vida, ki ne potrebuje zunanji
   - Samodejni izračun odprtosti (`🟢 Odprto zdaj` / `🔴 Zaprto`) glede na trenutno uro s filtrom za samo odprte točke.
   - Gumb za takojšen zagon peš navigacije.
 - 💶 **Razdeli račun (Bill Splitter):** Enostaven vnos zneska, števila oseb in izbira napitnine.
-- 🚕 **Taksi klic z naključnimi dialogi:** Zaporedje med 3 in 6 šaljivih prepričevalnih oken z direktno povezavo do klicnih številk lokalnih taksi služb (Taxi Metro, Taxi Laguna). Vrstni red in uvodni dialog sta vsakič znova naključno premešana iz nabora 10 različnih hudomušnih situacij.
+- 🚕 **Taksi klic z naključnimi dialogi:** Zaporedje med 3 in 6 šaljivih prepričevalnih oken z direktno povezavo do klicnih številk lokalnih taksi služb (Taxi Metro, Taxi Laguna). Vrstni red in uvodni dialog sta vsakič znova naključno premešana iz nabora 10 različnih hudomušnih situacij, pri čemer so gumbi za klic in preklic navpično zloženi za kristalno jasno preglednost.
 
 ---
 
 ### 5.7 Pivska Klapa & Tracker Meni (SquadManager.swift & SquadView.swift)
 
 - Skupinsko usklajevanje prek WebSocket protokola (`wss://sankfinder.sluga.me/ws` z varnim preklopom na lokalni naslov).
+- **Varnostna sanitizacija napak:** Če strežnik ni dosegljiv, se v UI-ju **nikoli** ne izpišejo sistemske izjeme ali IP naslovi, temveč zgolj prijazno sporočilo o preverjanju povezave.
 - **Poenotena statusna vrstica:** Zgornji del klepeta ima prečiščen, vitek dizajn z oznako sobe, številom članov, osebnim števcem (`+` / `-`) ter gumbom za odprtje trackerja.
 - **Pivski Tracker Klape (Podmeni / Modalni list):**
   - Prikazuje skupno število popitih piv celotne mize.
   - Lestvica ("Top pivci") s poudarjenim vodilnim članom.
   - Seznam vseh prisotnih članov z njihovim točnim številom pijač.
-  - Velik gumb **"Jaz častim naslednjo rundo!"**, ki sproži obvestilo vsem članom.
+  - Velik gumb **"Jaz častim naslednjo rundo!"**, ki sproži visoko-prioritetno obvestilo vsem članom klape.
 - **Hitri gumbi za sporočila:** Hitro pošiljanje predpripravljenih stavkov (*Naročil sem rundo!*, *Kdo gre na hrano?*, *Pridem čez 5 min*, *Kje točno sedite?*).
-- **Varnostni izhod & Izvoz klepeta:** Potrditveno okno ob zapuščanju klape ter izvoz celotne zgodovine klepeta s stanjem pijač prek sistemskega iOS deljenja (Share Sheet).
+- **Varnostno nagovarjanje / cmokanje ob zapuščanju klape:**
+  - Klik na gumb za izhod iz sobe odpre serijo šaljivih dialogov, ki prijatelja prepričujejo, naj še ostane (*"A res že greš? Noč je še mlada!", "Lahko greš, ampak moraš dati za rundo!", "Kdor prvi odide, plača naslednjič dvakrat!"*, itd.).
+  - Šele po potrditvi se povezava varno zaključi.
+- **Izvoz klepeta (Spomini):** Izvoz celotne zgodovine klepeta s stanjem pijač prek sistemskega iOS deljenja (Share Sheet).
 
 ---
 
@@ -281,6 +286,7 @@ Za vrhunsko uporabniško izkušnjo so vsi vnosni obrazci opremljeni z:
 - Orodno vrstico z gumbom **"Končano"** (`.doneButtonKeyboardToolbar()`) za enostaven umik številčne in besedilne tipkovnice.
 - Interaktivnim umikom ob drsenju vsebine (`.scrollDismissesKeyboard(.interactively)`).
 - Globalnim prepoznavalnikom dotika za zapiranje tipkovnice ob kliku na prazno površino.
+- Sinhroniziranim radijem iskanja (1, 2, 3, 5 km) in limitom lokalov (10, 25, 50, po meri), ki reaktivno krmilita `NetworkManager.shared.loadBars()`.
 
 ---
 
@@ -298,11 +304,36 @@ Projekt uporablja avtomatiziran GitHub Actions cevovod na macOS tekaču (`macos-
      ```powershell
      powershell -ExecutionPolicy Bypass -File download_ipa.ps1
      ```
-   - Skripta samodejno poišče najnovejšo uspešno gradnjo na GitHubu, prenese arhiv in ga odpakira v `c:\Android\SankFinder\SankFinder.ipa`.
+   - Ali Python orodje v scratch mapi:
+     ```bash
+     python download_artifact.py
+     ```
+   - **Opomba glede Azure Blob preusmeritve:** GitHub API ob prenosu artefakta vrne HTTP 302 preusmeritev na Microsoft Azure Blob Storage. Skripta uporablja `NoAuthRedirectHandler`, ki pri preusmeritvi odstrani glavo `Authorization`, saj Azure zavrne zahtevke s tujo GitHub avtentikacijo (HTTP 403 Forbidden).
 
 ---
 
-## 7. Navodila za Razvijalce & Sinhronizacija z Androidom
+## 7. Primerjalna Matrika Funkcionalnosti (iOS vs Android)
+
+| Funkcionalnost / Modul | iOS (Swift / SwiftUI) | Android (Kotlin / Compose) | Stanje Paritete |
+|---|---|---|:---:|
+| **Zemljevid & OpenStreetMap ploščice** | MapKit + `OSMTileOverlay` (z = 1 do 22 Over-Zoom) | OSMDroid z diskovnim predpomnilnikom | 100 % Usklajeno |
+| **Peš navigacija (OSRM)** | Primarni (`sankfinder.sluga.me`) + Fallback | Primarni (`sankfinder.sluga.me`) + Fallback | 100 % Usklajeno |
+| **Natančno sledenje manevrov (< 18 m)** | Samodejni preskok koraka | Samodejni preskok koraka | 100 % Usklajeno |
+| **Plavajoči kompas ob rotaciji** | Samodejni prikaz, klik poravna na sever | Samodejni prikaz, klik poravna na sever | 100 % Usklajeno |
+| **Živa obvestila na zaklenjenem zaslonu** | UserNotifications Lock Screen HUD z dekrementom | Foreground HUD Notification s časom in korakom | 100 % Usklajeno |
+| **Podpora za pametno uro** | Popolna samostojna aplikacija (Apple Watch `WCSession`) | Sistemska obvestila (Wear OS) | iOS razširjeno |
+| **Skener računov (OCR & FURS QR)** | Apple Vision Framework (`VNRecognizeTextRequest`) | Google ML Kit (TextRecognition + Barcode) | 100 % Usklajeno |
+| **5 Šank Orodij (Ruleta, Burek, Kolo, Račun, Taxi)** | Vseh 5 orodij z live burek statusom in naključnim taxijem | Vseh 5 orodij z live burek statusom in šaljivim taxijem | 100 % Usklajeno |
+| **Pivska Klapa (Chat & WebSockets)** | Dvojna povezava (DNS + IP fallback), sanitizirane napake | Dvojna povezava (DNS + IP fallback), sanitizirane napake | 100 % Usklajeno |
+| **Pivski Tracker & Runda klic** | Sheet meni, Toast + Sistemsko opozorilo ob rundi | BottomSheet meni, Heads-up obvestilo ob rundi | 100 % Usklajeno |
+| **Nagovarjanje ob izhodu iz klape** | Večkratni šaljivi dialogi | Večkratni šaljivi dialogi | 100 % Usklajeno |
+| **Radar prijateljev na zemljevidu** | Zlati označevalci brez grozdenja (`.required`) | Zlati označevalci z imenom in števcem pijač | 100 % Usklajeno |
+| **Zanesljiva offline baza (Fallback)** | 15 lokalov (Center, Krakovo, Šiška, Bežigrad) | 15 lokalov (Center, Krakovo, Šiška, Bežigrad) | 100 % Usklajeno |
+| **Filtriranje GPS natančnosti** | Zavrnitev `accuracy < 0`, preklop ob `accuracy <= 65m` | Zavrnitev grobih meritev, glajenje koordinat | 100 % Usklajeno |
+
+---
+
+## 8. Navodila za Razvijalce & Sinhronizacija z Androidom
 
 Pri dodajanju novih funkcionalnosti se držite naslednjih načel:
 - **Enotnost podatkovnih modelov:** Polja v `Models.swift` morajo ostati skladna z ustreznimi Kotlin podatkovnimi razredi v Android projektu.

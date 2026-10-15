@@ -1,6 +1,6 @@
 # 🍻 ŠankFinder - Celovita Programerska Dokumentacija & Arhitektura
 
-> **Različica aplikacije:** 1.2.0 (Build 36)  
+> **Različica aplikacije:** 1.2.0 (Build 37)  
 > **Glavni jezik:** Kotlin 1.9+  
 > **UI ogrodje:** Jetpack Compose (Material 3)  
 > **Ciljna platforma:** Android (minSdk 26, targetSdk 34)  
@@ -16,12 +16,14 @@
 4. [Navigacijski Sistem & Spodnja Vrstica](#4-navigacijski-sistem--spodnja-vrstica)
 5. [Ključni Moduli & Funkcionalnosti](#5-ključni-moduli--funkcionalnosti)
    - [5.1 Zemljevid in Turn-by-Turn Peš Navigacija](#51-zemljevid-in-turn-by-turn-peš-navigacija)
-   - [5.2 Zavihek "Igre" (Fun & Utility Hub)](#52-zavihek-igre-fun--utility-hub)
-   - [5.3 Seznam Lokalov & Filtriranje](#53-seznam-lokalov--filtriranje)
+   - [5.2 Zavihek "Orodja" (Šank Orodja Hub)](#52-zavihek-orodja-šank-orodja-hub)
+   - [5.3 Seznam Lokalov, Filtriranje & Fallback Baza](#53-seznam-lokalov-filtriranje--zanesljiva-rezervna-baza-fallback-lokali)
    - [5.4 Zgodovina Obiskov & ML Kit OCR Skeniranje Računov](#54-zgodovina-obiskov--ml-kit-ocr-skeniranje-računov)
    - [5.5 Nastavitve & Shramba Stanja (DataStore)](#55-nastavitve--shramba-stanja-datastore)
    - [5.6 Potisna Obvestila na Zaklenjenem Zaslonu](#56-potisna-obvestila-na-zaklenjenem-zaslonu)
-   - [5.7 Pivska Klapa (Skupinsko šankanje, Chat, Live Radar & Runda Tracker)](#57-pivska-klapa-skupinsko-šankanje-chat-live-radar--runda-tracker)
+   - [5.7 Pivska Klapa (Skupinsko šankanje, Chat, Live Radar & Runda Tracker)](#57-pivska-klapa-skupinsko-šankanje-chat-live-radar-runda-tracker--admin-uprava)
+   - [5.8 Primerjalna Matrika Funkcionalnosti (Android vs iOS)](#58-primerjalna-matrika-funkcionalnosti-android-vs-ios)
+   - [5.9 Nastavitev Caddy Povratnega Posrednika (Reverse Proxy)](#59-nastavitev-caddy-povratnega-posrednika-reverse-proxy)
 6. [Mrežni Sloj & Optimizacija API-jev](#6-mrežni-sloj--optimizacija-api-jev)
 7. [Rezultati Stres Testov & Zmogljivost](#7-rezultati-stres-testov--zmogljivost)
 8. [Vodnik za Razvijalce: Kako Razširiti Aplikacijo](#8-vodnik-za-razvijalce-kako-razširiti-aplikacijo)
@@ -163,11 +165,17 @@ Navigacija je centralizirana v [AppNavHost.kt](file:///c:/Android/SankFinder/app
     - Ob kliku aplikacija vsakič naključno izbere med **3 in 6 zaporednimi šaljivimi dialogi** (brez številk kot npr. 1/5, tako da uporabnik ne ve, kdaj bo popustila).
     - Ob zaključku se prikaže melanholičen dialog ("Čas je za domov... 🚕") z navpično poravnanimi gumbi brez prekrivanja (Taxi Metro, Taxi Laguna ter čist gumb "Prekliči, še malo ostanem...").
 
-### 5.3 Seznam Lokalov & Filtriranje
+### 5.3 Seznam Lokalov, Filtriranje & Zanesljiva Rezervna Baza (Fallback Lokali)
 - **Datoteka:** [MainPage.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/MainPage.kt) & [LokalViewModel.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/viewmodels/LokalViewModel.kt)
-- Iskanje v živo po imenu, naslovu in tipu lokala.
-- Reaktivno prilagajanje limitu prikazanih lokalov (10, 25, 50, po meri). Ob spremembi se nemudoma sproži posodobitev seznama z novim limitom.
-- Prikaz statusa odprtosti (Odprto / Zaprto), telefonskih številk ter hitri gumbi za klic, shranjevanje med priljubljene in zagon navigacije.
+- **Iskanje v živo:** Dinamično iskanje po imenu lokala, naslovu in tipu ponudbe (bar, pub, pivnica, kavarna).
+- **Reaktivno prilagajanje limitu lokalov:** Hitra izbira (10, 25, 50 ali po meri od 5 do 100), sinhronizirana z DataStore shrambo.
+- **Prednaloženi rezervni lokali za Ljubljano (Offline Fallback):**
+  - Če je mobilno omrežje moteno, podatkovni prenos ugasnjen ali Geoapify API začasno neodziven, aplikacija **nikoli ne prikaže praznega seznama**.
+  - V `LokalViewModel.kt` je vgrajena skrbno izbrana zbirka 15 legendarnih lokalov, ki pokriva:
+    - **Ljubljana Center & Krakovo:** Krakovc, Nostalgija Vintage Cafe, Pri Škofu, Pivnica Lajbah, Sir William's Pub, Cutty Sark Pub, Sax Pub, Pritličje, Daktari, BiKoFe.
+    - **Šiška & Bežigrad:** Gostilna Maratonec (Podmilščakova), Bar trikotnik (Podmilščakova/Milčinskega), Pivnica Union (Celovška), Kavarna Tiskarna (Dunajska), Lepotica in Zver Bar (Drenikova/Vodnikova).
+  - Ta zbirka je 100 % usklajena z iOS različico ([NetworkManager.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/NetworkManager.swift)), kar zagotavlja identično pokritost na obeh platformah.
+- Prikaz statusa odprtosti (Odprto / Zaprto), telefonskih številk ter hitri gumbi za klic, shranjevanje med priljubljene in neposreden zagon peš navigacije.
 
 ### 5.4 Zgodovina Obiskov & ML Kit OCR Skeniranje Računov
 - **Datoteka:** [HistoryPage.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/HistoryPage.kt) & [ReceiptScannerDialog.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/components/ReceiptScannerDialog.kt)
@@ -212,7 +220,9 @@ Navigacija je centralizirana v [AppNavHost.kt](file:///c:/Android/SankFinder/app
   4. **Potisno obvestilo ob klicu runde:** [SankNotificationHelper.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/notifications/SankNotificationHelper.kt) ob prejemu klica runde prikaže visoko-prioritetno sistemsko obvestilo z zvočnim signalom in vibracijo (*"🍻 [Ime] časti rundo!"*), enako kot na iOS.
   5. **Live Radar na zemljevidu:** Ko je klapa aktivna, se na [MapMainPage.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/MapMainPage.kt) v realnem času izrišejo zlati označevalci prijateljev z njihovo začetnico, imenom in številom pijač. Koordinate se samodejno sinhronizirajo vsakih 6 sekund.
   6. **Real-time Chat s hitrimi gumbi:** Takojšnje pošiljanje besedilnih sporočil prek WebSockets ter hitri gumbi z enim dotikom (*Naročil sem rundo!*, *Kdo gre na hrano?*, *Pridem čez 5 min*, *Kje točno sedite?*).
-  7. **Varnostno potrditveno okno ob zapuščanju klape:** Klik na gumb za izhod odpre Compose `AlertDialog` z opozorilom (*"Ali si prepričan, da želiš zapustiti to Pivsko Klapo?"*), kar prepreči nehoteno prekinitev povezave in izgubo seje.
+  7. **Varnostno nagovarjanje / cmokanje ob zapuščanju klape:**
+     - Klik na gumb za izhod iz sobe odpre serijo šaljivih potrditvenih opozoril, ki člana prepričujejo, naj še ostane (*"A res že greš? Noč je še mlada!", "Lahko greš, ampak moraš dati za rundo!", "Kdor prvi odide, naslednjič časti dvakrat!"* itd.).
+     - Šele po potrditvi se seja varno zaključi, kar prepreči nehoten izhod med druženjem.
   8. **Izvoz & Shranjevanje klepeta (Spomini):** Gumb za deljenje v orodni vrstici sestavi celoten transkript klepeta z datumom, sporočili in končnim stanjem pijač ter ga prek Android Share Sheet-a (`Intent.ACTION_SEND`) omogoči shraniti v beležke (Keep, Notes), deliti prek sporočil (WhatsApp, Signal, SMS) ali kopirati.
   9. **Skrita Nadzorna Plošča (Admin Dashboard):**
      - Dostopna na skrivnem URL-ju: `http://192.168.200.209:8080/sank-uprava-x77` ali `https://sankfinder.sluga.me/sank-uprava-x77`.
@@ -222,7 +232,26 @@ Navigacija je centralizirana v [AppNavHost.kt](file:///c:/Android/SankFinder/app
      - **Brisanje neprimernih sporočil:** Vsako sporočilo ima gumb *Izbriši*, ki nemudoma odstrani zapis iz SQLite baze.
      - **Urejen videz:** Odstranjeni vsi nezaželeni emojiji v korist profesionalnega, preglednega temnega vmesnika z animiranim stanjem strežnika.
 
-### 5.8 Nastavitev Caddy Povratnega Posrednika (Reverse Proxy)
+### 5.8 Primerjalna Matrika Funkcionalnosti (Android vs iOS)
+
+| Funkcionalnost / Modul | Android (Kotlin / Compose) | iOS (Swift / SwiftUI) | Stanje Paritete |
+|---|---|---|:---:|
+| **Zemljevid & OpenStreetMap ploščice** | OSMDroid z diskovnim predpomnilnikom | MapKit + `OSMTileOverlay` (z = 1 do 22 Over-Zoom) | 100 % Usklajeno |
+| **Peš navigacija (OSRM)** | Primarni (`sankfinder.sluga.me`) + Fallback | Primarni (`sankfinder.sluga.me`) + Fallback | 100 % Usklajeno |
+| **Natančno sledenje manevrov (< 18 m)** | Samodejni preskok koraka | Samodejni preskok koraka | 100 % Usklajeno |
+| **Plavajoči kompas ob rotaciji** | Samodejni prikaz, klik poravna na sever | Samodejni prikaz, klik poravna na sever | 100 % Usklajeno |
+| **Živa obvestila na zaklenjenem zaslonu** | Foreground HUD Notification s časom in korakom | UserNotifications Lock Screen HUD z dekrementom | 100 % Usklajeno |
+| **Podpora za pametno uro** | Sistemska obvestila (Wear OS) | Popolna samostojna aplikacija (Apple Watch `WCSession`) | iOS razširjeno |
+| **Skener računov (OCR & FURS QR)** | Google ML Kit (TextRecognition + Barcode) | Apple Vision Framework (`VNRecognizeTextRequest`) | 100 % Usklajeno |
+| **5 Šank Orodij (Ruleta, Burek, Kolo, Račun, Taxi)** | Vseh 5 orodij z live burek statusom in šaljivim taxijem | Vseh 5 orodij z live burek statusom in naključnim taxijem | 100 % Usklajeno |
+| **Pivska Klapa (Chat & WebSockets)** | Dvojna povezava (DNS + IP fallback), sanitizirane napake | Dvojna povezava (DNS + IP fallback), sanitizirane napake | 100 % Usklajeno |
+| **Pivski Tracker & Runda klic** | BottomSheet meni, Heads-up obvestilo ob rundi | Sheet meni, Toast + Sistemsko opozorilo ob rundi | 100 % Usklajeno |
+| **Nagovarjanje ob izhodu iz klape** | Večkratni šaljivi dialogi | Večkratni šaljivi dialogi | 100 % Usklajeno |
+| **Radar prijateljev na zemljevidu** | Zlati označevalci z imenom in števcem pijač | Zlati označevalci brez grozdenja (`.required`) | 100 % Usklajeno |
+| **Zanesljiva offline baza (Fallback)** | 15 lokalov (Center, Krakovo, Šiška, Bežigrad) | 15 lokalov (Center, Krakovo, Šiška, Bežigrad) | 100 % Usklajeno |
+| **Filtriranje GPS natančnosti** | Zavrnitev grobih meritev, glajenje koordinat | Zavrnitev `accuracy < 0`, preklop ob `accuracy <= 65m` | 100 % Usklajeno |
+
+### 5.9 Nastavitev Caddy Povratnega Posrednika (Reverse Proxy)
 Na prehodu / strežniku z nameščenim Caddy (`192.168.200.1`) se v `Caddyfile` v blok `sankfinder.sluga.me` doda:
 ```caddy
 sankfinder.sluga.me {
