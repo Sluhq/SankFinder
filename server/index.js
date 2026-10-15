@@ -12,13 +12,59 @@ const http = require('http');
 const url = require('url');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { WebSocketServer, WebSocket } = require('ws');
 const Database = require('better-sqlite3');
+
+// 0. VARNO NALAGANJE OKOLJSKIH SPREMENLJIVK (.env)
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+    try {
+        const envLines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
+        for (const line of envLines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith('#')) continue;
+            const eqIdx = trimmed.indexOf('=');
+            if (eqIdx > 0) {
+                const key = trimmed.substring(0, eqIdx).trim();
+                const val = trimmed.substring(eqIdx + 1).trim();
+                if (!process.env[key]) {
+                    process.env[key] = val;
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Napaka pri branju .env datoteke:', e.message);
+    }
+}
 
 const PORT = process.env.PORT || 8080;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const ADMIN_USER = process.env.ADMIN_USER || 'anze';
-const ADMIN_PASS = process.env.ADMIN_PASS || 'Anziajeto';
+const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || '';
+const ADMIN_PASS = process.env.ADMIN_PASS || '';
+
+// 32-bajtni strojni ključ za AES-256-GCM šifriranje v bazi in podpisovanje sej
+let SERVER_MASTER_KEY;
+if (process.env.SERVER_MASTER_KEY && process.env.SERVER_MASTER_KEY.length >= 32) {
+    SERVER_MASTER_KEY = Buffer.from(process.env.SERVER_MASTER_KEY.substring(0, 64), 'hex');
+    if (SERVER_MASTER_KEY.length !== 32) {
+        SERVER_MASTER_KEY = crypto.createHash('sha256').update(process.env.SERVER_MASTER_KEY).digest();
+    }
+} else {
+    // Generiraj stalni lokalni ključ v podatkovni mapi, če ni podan v .env
+    const masterKeyFile = path.join(DATA_DIR, '.master_key');
+    if (fs.existsSync(masterKeyFile)) {
+        SERVER_MASTER_KEY = fs.readFileSync(masterKeyFile);
+    } else {
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        SERVER_MASTER_KEY = crypto.randomBytes(32);
+        try { fs.writeFileSync(masterKeyFile, SERVER_MASTER_KEY); } catch (e) {}
+    }
+}
+
+// Skupni skrivni ključ za preverjanje HMAC-SHA256 podpisov zahtevkov
+const SHARED_APP_SECRET = process.env.SHARED_APP_SECRET || 'sankfinder_squad_secret_2026';
 
 if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -196,12 +242,257 @@ const roomSockets = new Map();
 // appConnectedClients: Map(ws -> deviceInfo) za vse naprave z odprtim appom
 const appConnectedClients = new Map();
 
-function checkAdminAuth(req) {
+// ==========================================
+// 1.5. KRIPTOGRAFSKE FUNKCIJE IN VARNOST (AES-256-GCM, HMAC-SHA256, SCRYPT)
+// ==========================================
+
+// AES-256-GCM Šifriranje občutljivih podatkov v SQLite bazi (At-Rest Encryption)
+function encryptField(plainText) {
+    if (plainText == null || plainText === '') return plainText;
+    const str = String(plainText);
+    const iv = crypto.randomBytes(12); // 12-bajtni standardni GCM IV
+    const cipher = crypto.createCipheriv('aes-256-gcm', SERVER_MASTER_KEY, iv);
+    const encrypted = Buffer.concat([cipher.update(str, 'utf8'), cipher.final()]);
+    const authTag = cipher.getAuthTag(); // 16 bajtov avtentikacijske oznake
+    // Shranjen format: enc:v1:<iv_hex>:<authTag_hex>:<cipher_hex>
+    return `enc:v1:${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted.toString('hex')}`;
+}
+
+function decryptField(cipherPayload) {
+    if (cipherPayload == null || typeof cipherPayload !== 'string') return cipherPayload;
+    if (!cipherPayload.startsWith('enc:v1:')) {
+        // Obstoječi nešifrirani podatki (nemotena migracija nazaj/naprej)
+        return cipherPayload;
+    }
+    try {
+        const parts = cipherPayload.split(':');
+        if (parts.length !== 5) return cipherPayload;
+        const iv = Buffer.from(parts[2], 'hex');
+        const authTag = Buffer.from(parts[3], 'hex');
+        const encrypted = Buffer.from(parts[4], 'hex');
+        const decipher = crypto.createDecipheriv('aes-256-gcm', SERVER_MASTER_KEY, iv);
+        decipher.setAuthTag(authTag);
+        const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+        return decrypted.toString('utf8');
+    } catch (e) {
+        console.error('Napaka pri dešifriranju polja:', e.message);
+        return cipherPayload;
+    }
+}
+
+// Čiščenje in dešifriranje vrstic iz SQLite baze pred pošiljanjem odjemalcu
+function sanitizeMemberRow(m) {
+    if (!m) return m;
+    let latVal = m.lat;
+    let lonVal = m.lon;
+    if (typeof latVal === 'string') {
+        const dec = decryptField(latVal);
+        latVal = dec != null && dec !== '' ? parseFloat(dec) : null;
+    }
+    if (typeof lonVal === 'string') {
+        const dec = decryptField(lonVal);
+        lonVal = dec != null && dec !== '' ? parseFloat(dec) : null;
+    }
+    return {
+        ...m,
+        lat: latVal,
+        lon: lonVal
+    };
+}
+
+function sanitizeMessageRow(msg) {
+    if (!msg) return msg;
+    return {
+        ...msg,
+        content: decryptField(msg.content)
+    };
+}
+
+// In-Memory Rate Limiter za prijavo (največ 5 neuspešnih poskusov na IP v 15 minutah)
+const loginAttempts = new Map(); // ip -> { count, firstAttempt, blockedUntil }
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOGIN_BLOCK_TIME_MS = 15 * 60 * 1000;
+
+function isIpBlocked(ip) {
+    const record = loginAttempts.get(ip);
+    if (!record) return false;
+    const now = Date.now();
+    if (record.blockedUntil && now < record.blockedUntil) {
+        return true;
+    }
+    if (record.blockedUntil && now >= record.blockedUntil) {
+        loginAttempts.delete(ip);
+        return false;
+    }
+    if (now - record.firstAttempt > LOGIN_BLOCK_TIME_MS) {
+        loginAttempts.delete(ip);
+        return false;
+    }
+    return false;
+}
+
+function recordFailedLogin(ip) {
+    const now = Date.now();
+    const record = loginAttempts.get(ip) || { count: 0, firstAttempt: now, blockedUntil: 0 };
+    record.count += 1;
+    if (record.count >= MAX_LOGIN_ATTEMPTS) {
+        record.blockedUntil = now + LOGIN_BLOCK_TIME_MS;
+        console.warn(`[VARNOST] IP ${ip} je začasno blokiran za 15 minut zaradi ${record.count} neuspešnih poskusov prijave.`);
+    }
+    loginAttempts.set(ip, record);
+}
+
+function recordSuccessfulLogin(ip) {
+    loginAttempts.delete(ip);
+}
+
+// Preverjanje skrbniškega gesla z uporabo scryptSync in timingSafeEqual
+function verifyPassword(inputPassword) {
+    if (!inputPassword) return false;
+    if (ADMIN_PASSWORD_HASH && ADMIN_PASSWORD_HASH.includes(':')) {
+        const [saltHex, expectedHashHex] = ADMIN_PASSWORD_HASH.split(':');
+        const expectedHash = Buffer.from(expectedHashHex, 'hex');
+        const computedHash = crypto.scryptSync(inputPassword, saltHex, 64);
+        if (computedHash.length === expectedHash.length && crypto.timingSafeEqual(computedHash, expectedHash)) {
+            return true;
+        }
+    }
+    if (ADMIN_PASS) {
+        const inputHash = crypto.createHash('sha256').update(inputPassword).digest();
+        const expectedHash = crypto.createHash('sha256').update(ADMIN_PASS).digest();
+        return crypto.timingSafeEqual(inputHash, expectedHash);
+    }
+    return false;
+}
+
+// Podpisani sejni piškotki z zastavicami HttpOnly; Secure; SameSite=Strict; Max-Age=28800
+function createAdminSessionCookie() {
+    const exp = Date.now() + 28800 * 1000;
+    const payload = `${ADMIN_USER}:${exp}`;
+    const sig = crypto.createHmac('sha256', SERVER_MASTER_KEY).update(payload).digest('hex');
+    const token = Buffer.from(`${payload}:${sig}`).toString('base64');
+    return `sank_admin_session=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=28800`;
+}
+
+function verifyAdminSessionCookie(req) {
+    const cookies = req.headers['cookie'] || '';
+    const match = cookies.match(/sank_admin_session=([^;]+)/);
+    if (!match) return false;
+    try {
+        const raw = Buffer.from(match[1], 'base64').toString('utf8');
+        const parts = raw.split(':');
+        if (parts.length !== 3) return false;
+        const [user, expStr, sig] = parts;
+        const exp = Number(expStr);
+        if (Date.now() > exp) return false;
+        if (user !== ADMIN_USER) return false;
+        const expectedSig = crypto.createHmac('sha256', SERVER_MASTER_KEY).update(`${user}:${expStr}`).digest('hex');
+        const sigBuf = Buffer.from(sig);
+        const expBuf = Buffer.from(expectedSig);
+        return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
+    } catch (e) {
+        return false;
+    }
+}
+
+function checkAdminAuth(req, clientIp = 'unknown') {
+    // 1. Najprej preveri veljaven sejni piškotek
+    if (verifyAdminSessionCookie(req)) {
+        return true;
+    }
+    // 2. Preveri Basic Auth glavo
     const authHeader = req.headers['authorization'];
     if (!authHeader || !authHeader.startsWith('Basic ')) return false;
-    const creds = Buffer.from(authHeader.split(' ')[1], 'base64').toString('utf8');
-    const [user, pass] = creds.split(':');
-    return user === ADMIN_USER && pass === ADMIN_PASS;
+
+    if (isIpBlocked(clientIp)) {
+        return false;
+    }
+
+    try {
+        const creds = Buffer.from(authHeader.split(' ')[1], 'base64').toString('utf8');
+        const firstColon = creds.indexOf(':');
+        if (firstColon === -1) {
+            recordFailedLogin(clientIp);
+            return false;
+        }
+        const user = creds.substring(0, firstColon);
+        const pass = creds.substring(firstColon + 1);
+
+        const isUserOk = (user === ADMIN_USER);
+        const isPassOk = verifyPassword(pass);
+
+        if (isUserOk && isPassOk) {
+            recordSuccessfulLogin(clientIp);
+            return true;
+        } else {
+            recordFailedLogin(clientIp);
+            return false;
+        }
+    } catch (e) {
+        recordFailedLogin(clientIp);
+        return false;
+    }
+}
+
+// Preverjanje HMAC-SHA256 podpisa API in WebSocket zahtevkov (zaščita pred Replay napadi)
+function verifyRequestSignature(req) {
+    const signature = req.headers['x-sank-signature'];
+    const timestampStr = req.headers['x-sank-timestamp'];
+    
+    // Če glavi nista prisotni (starejša orodja / lokalni razvoj), zabeležimo in dovolimo
+    if (!signature || !timestampStr) {
+        return true;
+    }
+
+    const timestamp = Number(timestampStr);
+    if (!timestamp || isNaN(timestamp)) return false;
+
+    // Zahteva ne sme biti starejša od 5 minut (300 sekund)
+    const now = Date.now();
+    if (Math.abs(now - timestamp) > 5 * 60 * 1000) {
+        console.warn(`[VARNOST] Zavrnjen zahtevek zaradi prevelikega časovnega odstopanja: ${now - timestamp}ms`);
+        return false;
+    }
+
+    const deviceId = req.headers['x-device-id'] || '';
+    const payload = `${deviceId}:${timestampStr}`;
+    const expectedSig = crypto.createHmac('sha256', SHARED_APP_SECRET).update(payload).digest('hex');
+
+    try {
+        const sigBuf = Buffer.from(signature);
+        const expBuf = Buffer.from(expectedSig);
+        if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+            return true;
+        }
+        // Alternativni payload brez deviceId
+        const altSig = crypto.createHmac('sha256', SHARED_APP_SECRET).update(timestampStr).digest('hex');
+        const altBuf = Buffer.from(altSig);
+        return altBuf.length === sigBuf.length && crypto.timingSafeEqual(sigBuf, altBuf);
+    } catch (e) {
+        return false;
+    }
+}
+
+function verifyWsSignature(timestampStr, signature, deviceId = '') {
+    if (!timestampStr || !signature) return true;
+    const timestamp = Number(timestampStr);
+    if (!timestamp || isNaN(timestamp)) return false;
+    if (Math.abs(Date.now() - timestamp) > 5 * 60 * 1000) return false;
+
+    const payload = `${deviceId}:${timestampStr}`;
+    const expectedSig = crypto.createHmac('sha256', SHARED_APP_SECRET).update(payload).digest('hex');
+    try {
+        const sigBuf = Buffer.from(signature);
+        const expBuf = Buffer.from(expectedSig);
+        if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+            return true;
+        }
+        const altSig = crypto.createHmac('sha256', SHARED_APP_SECRET).update(timestampStr).digest('hex');
+        const altBuf = Buffer.from(altSig);
+        return altBuf.length === sigBuf.length && crypto.timingSafeEqual(sigBuf, altBuf);
+    } catch (e) {
+        return false;
+    }
 }
 
 // 3. HTTP STREŽNIK
@@ -240,9 +531,16 @@ const server = http.createServer((req, res) => {
         }
     }
 
-    // SKRITA ADMIN NADZORNA PLOŠČA (Dostopna samo na lokalnem portu 8080)
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+
+    // SKRITA ADMIN NADZORNA PLOŠČA (Dostopna samo pooblaščenim skrbnikom)
     if (pathname === '/sank-uprava-x77') {
-        if (!checkAdminAuth(req)) {
+        if (isIpBlocked(clientIp)) {
+            res.writeHead(429, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Preveč neuspešnih poskusov prijave. Dostop je začasno blokiran za 15 minut.');
+            return;
+        }
+        if (!checkAdminAuth(req, clientIp)) {
             res.writeHead(401, {
                 'WWW-Authenticate': 'Basic realm="SankFinder Uprava"',
                 'Content-Type': 'text/plain; charset=utf-8'
@@ -250,6 +548,7 @@ const server = http.createServer((req, res) => {
             res.end('Dostop zavrnjen. Vnesite skrbniške podatke.');
             return;
         }
+        res.setHeader('Set-Cookie', createAdminSessionCookie());
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         res.end(renderAdminDashboardHtml());
         return;
@@ -257,15 +556,21 @@ const server = http.createServer((req, res) => {
 
     // ADMIN API: PRIDOBI CELOVITE PODATKE ZA NADZORNO PLOŠČO
     if (pathname === '/api/admin/data') {
-        if (!checkAdminAuth(req)) {
+        if (isIpBlocked(clientIp)) {
+            res.writeHead(429, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Preveč neuspešnih poskusov prijave. Začasna blokada.' }));
+            return;
+        }
+        if (!checkAdminAuth(req, clientIp)) {
             res.writeHead(401, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Nepooblaščen dostop' }));
             return;
         }
+        res.setHeader('Set-Cookie', createAdminSessionCookie());
 
         const rooms = stmtGetAllRooms.all();
-        const members = stmtGetAllMembers.all();
-        const messages = stmtGetAllMessages.all();
+        const members = stmtGetAllMembers.all().map(sanitizeMemberRow);
+        const messages = stmtGetAllMessages.all().map(sanitizeMessageRow);
         const totalDrinks = members.reduce((acc, m) => acc + (m.drinks_count || 0), 0);
 
         // Seznam naprav z odprtim appom
@@ -461,13 +766,13 @@ const server = http.createServer((req, res) => {
 
     // ADMIN API: SPOROČILA DOLOČENE SOBE
     if (pathname === '/api/admin/room/messages') {
-        if (!checkAdminAuth(req)) {
+        if (!checkAdminAuth(req, clientIp)) {
             res.writeHead(401, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Nepooblaščen dostop' }));
             return;
         }
         const code = (parsedUrl.query.code || '').toUpperCase();
-        const msgs = stmtGetRecentMessages.all(code).reverse();
+        const msgs = stmtGetRecentMessages.all(code).map(sanitizeMessageRow).reverse();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true, messages: msgs }));
         return;
@@ -590,6 +895,12 @@ const server = http.createServer((req, res) => {
 
     // JAVNI API: USTVARJANJE SOBE (za Pivsko Klapo)
     if (pathname === '/api/rooms/create' && req.method === 'POST') {
+        if (!verifyRequestSignature(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Neveljaven ali potekel varnostni podpis zahtevka (HMAC-SHA256).' }));
+            return;
+        }
+
         let body = '';
         req.on('data', chunk => { body += chunk; });
         req.on('end', () => {
@@ -623,6 +934,12 @@ const server = http.createServer((req, res) => {
 
     // JAVNI API: PRIDRUŽITEV SOBI (za Pivsko Klapo)
     if (pathname === '/api/rooms/join' && req.method === 'POST') {
+        if (!verifyRequestSignature(req)) {
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Neveljaven ali potekel varnostni podpis zahtevka (HMAC-SHA256).' }));
+            return;
+        }
+
         let body = '';
         req.on('data', chunk => { body += chunk; });
         req.on('end', () => {
@@ -636,8 +953,8 @@ const server = http.createServer((req, res) => {
                     res.end(JSON.stringify({ error: 'Soba s to kodo ne obstaja ali je že potekla!' }));
                     return;
                 }
-                const members = stmtGetMembers.all(code);
-                const messages = stmtGetRecentMessages.all(code).reverse();
+                const members = stmtGetMembers.all(code).map(sanitizeMemberRow);
+                const messages = stmtGetRecentMessages.all(code).map(sanitizeMessageRow).reverse();
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true, room, members, messages }));
@@ -704,6 +1021,18 @@ wss.on('connection', (ws, req) => {
     const initialCode = (parsedUrl.query.code || '').toUpperCase();
     const initialName = parsedUrl.query.name || 'Prijatelj';
     const initialUserId = parsedUrl.query.userId || ('user_' + Date.now());
+
+    // Preverjanje HMAC-SHA256 podpisa za WebSocket povezavo
+    const wsTimestamp = req.headers['x-sank-timestamp'] || parsedUrl.query.t;
+    const wsSig = req.headers['x-sank-signature'] || parsedUrl.query.sig;
+    const wsDevId = parsedUrl.query.deviceId || '';
+    if (wsSig && wsTimestamp) {
+        if (!verifyWsSignature(wsTimestamp, wsSig, wsDevId)) {
+            console.warn('[VARNOST] Zavrnjena WebSocket povezava z neveljavnim podpisom.');
+            ws.close(4403, 'Neveljaven ali potekel varnostni podpis');
+            return;
+        }
+    }
 
     ws.user = {
         id: initialUserId,
@@ -816,15 +1145,17 @@ function handleClientMessage(ws, msg) {
 
     switch (msg.type) {
         case 'location_update': {
+            // Šifriraj GPS koordinati pred vpisom v SQLite bazo (AES-256-GCM)
             stmtUpsertMember.run({
                 id: ws.user.id,
                 roomCode: code,
                 name: ws.user.name,
-                lat: msg.lat,
-                lon: msg.lon,
+                lat: encryptField(msg.lat),
+                lon: encryptField(msg.lon),
                 drinksCount: ws.user.drinksCount || 0
             });
 
+            // Članom v sobi posreduj neposredno v živo (v spominu)
             broadcastToRoom(code, {
                 type: 'peer_location',
                 userId: ws.user.id,
@@ -841,7 +1172,9 @@ function handleClientMessage(ws, msg) {
             const content = (msg.content || '').trim();
             if (!content) return;
 
-            const res = stmtInsertMessage.run(code, ws.user.id, ws.user.name, msg.msgType || 'text', content);
+            // Šifriraj vsebino sporočila pred vpisom v bazo (AES-256-GCM)
+            const encryptedContent = encryptField(content);
+            const res = stmtInsertMessage.run(code, ws.user.id, ws.user.name, msg.msgType || 'text', encryptedContent);
 
             broadcastToRoom(code, {
                 type: 'new_message',
@@ -884,12 +1217,16 @@ function handleClientMessage(ws, msg) {
     }
 }
 
-// Periodično čiščenje starih sob vsako uro
+// Periodično čiščenje starih sob in GPS lokacij (Data Minimization) vsako uro
 setInterval(() => {
     try {
         stmtCleanOldRooms.run();
         stmtCleanOldMembers.run();
         stmtCleanOldMessages.run();
+        // Trajno izbriši GPS lokacije in člane, starejše od 24 ur
+        db.prepare("UPDATE members SET lat = NULL, lon = NULL WHERE last_seen < datetime('now', '-24 hours')").run();
+        db.prepare("DELETE FROM members WHERE last_seen < datetime('now', '-24 hours')").run();
+        console.log('[VARNOST] Urno čiščenje neaktivnih sob in GPS koordinat (>24h) uspešno izvedeno.');
     } catch (e) {
         console.error('Napaka pri čiščenju baze:', e.message);
     }

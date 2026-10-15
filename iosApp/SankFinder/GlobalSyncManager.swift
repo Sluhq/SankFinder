@@ -17,7 +17,11 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
     @Published var motd: String?
     
     private var webSocketTask: URLSessionWebSocketTask?
-    private let urlSession = URLSession(configuration: .default)
+    private lazy var urlSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.tlsMinimumSupportedProtocolVersion = .TLSv13
+        return URLSession(configuration: config)
+    }()
     private var pingTimer: Timer?
     private var reconnectTimer: Timer?
     
@@ -32,11 +36,16 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
     
     private var currentScreen: String = "Glavna stran"
     private var deviceId: String {
-        if let id = UserDefaults.standard.string(forKey: "sankfinder_device_id") {
+        if let id = SecureStorage.shared.getString(key: "sankfinder_device_id") {
             return id
         }
+        // Samodejna migracija iz UserDefaults, če že obstaja
+        if let oldId = UserDefaults.standard.string(forKey: "sankfinder_device_id") {
+            SecureStorage.shared.saveString(key: "sankfinder_device_id", value: oldId)
+            return oldId
+        }
         let newId = "ios_" + UUID().uuidString.prefix(8).lowercased()
-        UserDefaults.standard.set(newId, forKey: "sankfinder_device_id")
+        SecureStorage.shared.saveString(key: "sankfinder_device_id", value: newId)
         return newId
     }
     
@@ -123,12 +132,17 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
         
         let hostInfo = hosts[currentHostIndex]
         let scheme = hostInfo.useSsl ? "wss" : "ws"
-        let urlString = "\(scheme)://\(hostInfo.host)/ws?clientType=app&deviceId=\(deviceId)&model=\(encModel)&os=\(encOs)&screen=\(encScreen)&version=1.0"
+        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        let signature = SecureStorage.shared.generateSignature(timestamp: timestamp, deviceId: deviceId)
+        let urlString = "\(scheme)://\(hostInfo.host)/ws?clientType=app&deviceId=\(deviceId)&model=\(encModel)&os=\(encOs)&screen=\(encScreen)&version=1.0&t=\(timestamp)&sig=\(signature)"
         
         guard let url = URL(string: urlString) else { return }
         
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("\(timestamp)", forHTTPHeaderField: "X-Sank-Timestamp")
+        request.setValue(signature, forHTTPHeaderField: "X-Sank-Signature")
+        request.setValue(deviceId, forHTTPHeaderField: "X-Device-Id")
         request.timeoutInterval = 8.0
         
         webSocketTask = urlSession.webSocketTask(with: request)

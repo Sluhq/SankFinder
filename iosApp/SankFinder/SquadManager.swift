@@ -19,7 +19,12 @@ class SquadManager: ObservableObject {
     private let userAgent = "SankFinderApp-Slovenia/1.0 (https://sankfinder.sluga.me; contact@sluga.me)"
     
     private var webSocketTask: URLSessionWebSocketTask?
-    private let urlSession = URLSession(configuration: .default)
+    private lazy var urlSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.tlsMinimumSupportedProtocolVersion = .TLSv13
+        config.timeoutIntervalForRequest = 8.0
+        return URLSession(configuration: config)
+    }()
     
     // Kandidata: Javna domena in neposredni lokalni IP kot na Androidu
     private let hosts = [
@@ -78,11 +83,18 @@ class SquadManager: ObservableObject {
             request.timeoutInterval = 6.0
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+            
+            let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+            let signature = SecureStorage.shared.generateSignature(timestamp: timestamp, deviceId: myUserId)
+            request.setValue("\(timestamp)", forHTTPHeaderField: "X-Sank-Timestamp")
+            request.setValue(signature, forHTTPHeaderField: "X-Sank-Signature")
+            request.setValue(myUserId, forHTTPHeaderField: "X-Device-Id")
+            
             let body = ["name": roomName]
             request.httpBody = try? JSONSerialization.data(withJSONObject: body)
             
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let success = json["success"] as? Bool, success else {
@@ -135,11 +147,18 @@ class SquadManager: ObservableObject {
             request.timeoutInterval = 6.0
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+            
+            let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+            let signature = SecureStorage.shared.generateSignature(timestamp: timestamp, deviceId: myUserId)
+            request.setValue("\(timestamp)", forHTTPHeaderField: "X-Sank-Timestamp")
+            request.setValue(signature, forHTTPHeaderField: "X-Sank-Signature")
+            request.setValue(myUserId, forHTTPHeaderField: "X-Device-Id")
+            
             let body = ["code": cleanCode]
             request.httpBody = try? JSONSerialization.data(withJSONObject: body)
             
             do {
-                let (data, response) = try await URLSession.shared.data(for: request)
+                let (data, response) = try await urlSession.data(for: request)
                 guard let http = response as? HTTPURLResponse, http.statusCode == 200,
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                       let success = json["success"] as? Bool, success,
@@ -211,11 +230,16 @@ class SquadManager: ObservableObject {
         let encName = myUserName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "Prijatelj"
         let hostInfo = hosts[currentHostIndex]
         let scheme = hostInfo.useSsl ? "wss" : "ws"
-        let urlString = "\(scheme)://\(hostInfo.host)/ws?code=\(code)&name=\(encName)&userId=\(myUserId)"
+        let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        let signature = SecureStorage.shared.generateSignature(timestamp: timestamp, deviceId: myUserId)
+        let urlString = "\(scheme)://\(hostInfo.host)/ws?code=\(code)&name=\(encName)&userId=\(myUserId)&t=\(timestamp)&sig=\(signature)"
         guard let url = URL(string: urlString) else { return }
         
         var request = URLRequest(url: url)
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("\(timestamp)", forHTTPHeaderField: "X-Sank-Timestamp")
+        request.setValue(signature, forHTTPHeaderField: "X-Sank-Signature")
+        request.setValue(myUserId, forHTTPHeaderField: "X-Device-Id")
         request.timeoutInterval = 8.0
         webSocketTask = urlSession.webSocketTask(with: request)
         webSocketTask?.resume()

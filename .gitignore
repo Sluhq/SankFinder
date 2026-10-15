@@ -12,5 +12,9 @@
 /captures
 .externalNativeBuild
 .cxx
-local.properties
 *.ipa
+.env
+server/.env
+server/data/
+.idea/
+

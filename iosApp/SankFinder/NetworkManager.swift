@@ -9,6 +9,14 @@ class NetworkManager: ObservableObject {
     private let osrmFallbackUrl = "https://routing.openstreetmap.de/routed-foot/"
     private let userAgent = "SankFinderApp-Slovenia/1.0 (https://sankfinder.sluga.me; contact@sluga.me)"
     
+    // Varen URLSession s strogo prisiljenim TLS 1.3 protokolom
+    private lazy var urlSession: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.tlsMinimumSupportedProtocolVersion = .TLSv13
+        config.timeoutIntervalForRequest = 10.0
+        return URLSession(configuration: config)
+    }()
+    
     // Deljeno stanje lokalov za celotno aplikacijo (Zemljevid in Seznam lokalov sta vedno 100% usklajena)
     @Published var bars: [Lokal] = []
     @Published var isLoadingBars: Bool = false
@@ -92,7 +100,7 @@ class NetworkManager: ObservableObject {
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 10.0
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }
@@ -156,7 +164,7 @@ class NetworkManager: ObservableObject {
         request.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 8.0
         
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await urlSession.data(for: request)
         guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
             throw URLError(.badServerResponse)
         }

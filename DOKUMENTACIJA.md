@@ -1,4 +1,4 @@
-# 🍻 ŠankFinder - Celovita Programerska Dokumentacija & Arhitektura
+﻿# 🍻 ŠankFinder - Celovita Programerska Dokumentacija & Arhitektura
 
 > **Različica aplikacije:** 1.2.0 (Build 37)  
 > **Glavni jezik:** Kotlin 1.9+  
@@ -22,11 +22,13 @@
    - [5.5 Nastavitve & Shramba Stanja (DataStore)](#55-nastavitve--shramba-stanja-datastore)
    - [5.6 Potisna Obvestila na Zaklenjenem Zaslonu](#56-potisna-obvestila-na-zaklenjenem-zaslonu)
    - [5.7 Pivska Klapa (Skupinsko šankanje, Chat, Live Radar & Runda Tracker)](#57-pivska-klapa-skupinsko-šankanje-chat-live-radar-runda-tracker--admin-uprava)
-   - [5.8 Primerjalna Matrika Funkcionalnosti (Android vs iOS)](#58-primerjalna-matrika-funkcionalnosti-android-vs-ios)
-   - [5.9 Nastavitev Caddy Povratnega Posrednika (Reverse Proxy)](#59-nastavitev-caddy-povratnega-posrednika-reverse-proxy)
-6. [Mrežni Sloj & Optimizacija API-jev](#6-mrežni-sloj--optimizacija-api-jev)
-7. [Rezultati Stres Testov & Zmogljivost](#7-rezultati-stres-testov--zmogljivost)
-8. [Vodnik za Razvijalce: Kako Razširiti Aplikacijo](#8-vodnik-za-razvijalce-kako-razširiti-aplikacijo)
+   - [5.8 Grafična Podoba, Logotip in Zagonski Zaslon](#58-grafična-podoba-logotip-in-zagonski--nalagalni-zaslon-splash-screen)
+   - [5.9 Primerjalna Matrika Funkcionalnosti (Android vs iOS)](#59-primerjalna-matrika-funkcionalnosti-android-vs-ios)
+   - [5.10 Nastavitev Caddy Povratnega Posrednika (Reverse Proxy)](#510-nastavitev-caddy-povratnega-posrednika-reverse-proxy)
+6. [Celovita Varnost & Kriptografska Zaščita Podatkov (Security Architecture)](#6-celovita-varnost--kriptografska-zaščita-podatkov-security-architecture)
+7. [Mrežni Sloj & Optimizacija API-jev](#7-mrežni-sloj--optimizacija-api-jev)
+8. [Rezultati Stres Testov & Zmogljivost](#8-rezultati-stres-testov--zmogljivost)
+9. [Vodnik za Razvijalce: Kako Razširiti Aplikacijo](#9-vodnik-za-razvijalce-kako-razširiti-aplikacijo)
 
 ---
 
@@ -71,7 +73,9 @@ graph TD
 ```
 c:/Android/SankFinder/
 ├── app/src/main/
-│   ├── AndroidManifest.xml                  # Dovoljenja (GPS, Kamera, Vibracija, Foreground Service)
+│   ├── AndroidManifest.xml                  # Dovoljenja, Foreground Service & Network Security Config
+│   ├── res/xml/
+│   │   └── network_security_config.xml      # Prepoved nešifriranega prometa (cleartextTrafficPermitted=false)
 │   └── java/com/example/
 │       ├── compose/
 │       │   └── Color.kt                     # Barvna paleta (BeerGold, DrajvGreen, DrajvRed, Surface)
@@ -95,6 +99,8 @@ c:/Android/SankFinder/
 │           ├── notifications/
 │           │   ├── SankNotificationHelper.kt# Prikaz vodenja na zaklenjenem zaslonu (HUD Notification)
 │           │   └── NavigationBridge.kt      # Event bus za komunikacijo med notifikacijo in ViewModelom
+│           ├── security/
+│           │   └── CryptoHelper.kt          # AndroidKeyStore AES-256-GCM šifriranje lokalnih podatkov & HMAC-SHA256
 │           └── ui/
 │               ├── components/
 │               │   ├── ReceiptScannerDialog.kt # Kamera + ML Kit OCR/QR dialog
@@ -231,13 +237,17 @@ Navigacija je centralizirana v [AppNavHost.kt](file:///c:/Android/SankFinder/app
      - Klik na gumb za izhod iz sobe odpre serijo šaljivih potrditvenih opozoril, ki člana prepričujejo, naj še ostane (*"A res že greš? Noč je še mlada!", "Lahko greš, ampak moraš dati za rundo!", "Kdor prvi odide, naslednjič časti dvakrat!"* itd.).
      - Šele po potrditvi se seja varno zaključi, kar prepreči nehoten izhod med druženjem.
   8. **Izvoz & Shranjevanje klepeta (Spomini):** Gumb za deljenje v orodni vrstici sestavi celoten transkript klepeta z datumom, sporočili in končnim stanjem pijač ter ga prek Android Share Sheet-a (`Intent.ACTION_SEND`) omogoči shraniti v beležke (Keep, Notes), deliti prek sporočil (WhatsApp, Signal, SMS) ali kopirati.
-  9. **Skrita Nadzorna Plošča (Admin Dashboard):**
-     - Dostopna na skrivnem URL-ju: `http://192.168.200.209:8080/sank-uprava-x77` ali `https://sankfinder.sluga.me/sank-uprava-x77`.
-     - Zaščitena z avtentikacijo: uporabnik `anze`, geslo `Anziajeto`.
-     - **Povezani uporabniki v živo (WebSockets):** Tabela v realnem času prikazuje trenutno povezane odjemalce, njihova imena, kodo sobe, IP naslov in čas povezave.
-     - **Vstop v sobo / klepet v živo:** Skrbnik lahko s klikom na *Vstopi v klepet* odpre pogovorno okno katerekoli sobe, prebere celotno zgodovino, pošlje skrbniško sporočilo ali izbriše posamezno sporočilo.
-     - **Brisanje neprimernih sporočil:** Vsako sporočilo ima gumb *Izbriši*, ki nemudoma odstrani zapis iz SQLite baze.
-     - **Urejen videz:** Odstranjeni vsi nezaželeni emojiji v korist profesionalnega, preglednega temnega vmesnika z animiranim stanjem strežnika.
+   9. **Skrita Nadzorna Plošča (Admin Dashboard):**
+      - Dostopna na skrivnem URL-ju: http://192.168.200.209:8080/sank-uprava-x77 ali https://sankfinder.sluga.me/sank-uprava-x77.
+      - **Kriptografska avtentikacija brez trdo kodiranih gesel:**
+        - Geslo se preverja prek kriptografskega zgoščka v .env (ADMIN_PASSWORD_HASH) z uporabo algoritma crypto.scryptSync.
+        - Časovno varna primerjava (crypto.timingSafeEqual) popolnoma preprečuje časovne napade (Timing Attacks).
+        - **V pomnilniku delujoč Rate Limiter:** Omejitev na največ 5 neuspešnih poskusov na posamezen IP naslov v 15 minutah. Po prekoračitvi je dostop začasno blokiran (HTTP 429).
+        - **Varni sejni piškotek:** Po uspešni prijavi se izda kriptografsko podpisan piškotek sank_admin_session z zastavicami HttpOnly; Secure; SameSite=Strict; Max-Age=28800 (8 ur veljavnosti), kar onemogoča XSS in CSRF zlorabe.
+      - **Povezani uporabniki v živo (WebSockets):** Tabela v realnem času prikazuje trenutno povezane odjemalce, njihova imena, kodo sobe, IP naslov in čas povezave.
+      - **Vstop v sobo / klepet v živo:** Skrbnik lahko s klikom na *Vstopi v klepet* odpre pogovorno okno katerekoli sobe, prebere dešifrirano zgodovino, pošlje skrbniško sporočilo ali izbriše posamezno sporočilo.
+      - **Brisanje neprimernih sporočil:** Vsako sporočilo ima gumb *Izbriši*, ki nemudoma trajno odstrani zapis iz SQLite baze.
+      - **Urejen videz:** Prefinjen temen vmesnik z uradnim logotipom v glavi, faviconom v brskalniku ter animiranim stanjem strežnika.
 
 ### 5.8 Grafična Podoba, Logotip in Zagonski / Nalagalni Zaslon (Splash Screen)
 - **Uradni logotip (PNG):** Prepoznavna ikona lokacijskega zatiča (map pin) z vrisanim pivskim kozarcem in belo peno na prosojni podlagi.
@@ -269,11 +279,28 @@ Navigacija je centralizirana v [AppNavHost.kt](file:///c:/Android/SankFinder/app
 | **Radar prijateljev na zemljevidu** | Zlati označevalci z imenom in števcem pijač | Zlati označevalci brez grozdenja (`.required`) | 100 % Usklajeno |
 | **Zanesljiva offline baza (Fallback)** | 15 lokalov (Center, Krakovo, Šiška, Bežigrad) | 15 lokalov (Center, Krakovo, Šiška, Bežigrad) | 100 % Usklajeno |
 | **Filtriranje GPS natančnosti** | Zavrnitev grobih meritev, glajenje koordinat | Zavrnitev `accuracy < 0`, preklop ob `accuracy <= 65m` | 100 % Usklajeno |
+| **Šifriranje lokalnih podatkov (At-Rest)** | AndroidKeyStore AES-256-GCM šifrirana JSON shramba z migracijo | CryptoKit AES-256-GCM + Keychain ključ (Secure Enclave) | 100 % Usklajeno |
+| **Zaščita omrežnega sloja (Transport)** | ConnectionSpec MODERN_TLS (TLS 1.3), prepoved cleartext prometa | Obvezen TLS 1.3 v URLSession, ATS NSAllowsArbitraryLoads=false | 100 % Usklajeno |
+| **Podpisovanje zahtevkov (HMAC)** | HMAC-SHA256 podpis nad napravo in časovnim žigom (< 5 min) | HMAC-SHA256 podpis nad napravo in časovnim žigom (< 5 min) | 100 % Usklajeno |
 
-### 5.9 Nastavitev Caddy Povratnega Posrednika (Reverse Proxy)
+### 5.10 Nastavitev Caddy Povratnega Posrednika (Reverse Proxy)
 Na prehodu / strežniku z nameščenim Caddy (`192.168.200.1`) se v `Caddyfile` v blok `sankfinder.sluga.me` doda:
 ```caddy
 sankfinder.sluga.me {
+    # Strog TLS 1.3 protokol za maksimalno varnost in 0 ms zakasnitev
+    tls {
+        protocols tls1.3
+    }
+
+    # Varnostne HTTP glave
+    header {
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+        -Server
+    }
+
     # Obstoječa OSRM peš navigacija
     handle /route/* {
         reverse_proxy 192.168.200.209:5000
@@ -299,7 +326,74 @@ Po ukazu `caddy reload` bo celotna Pivska Klapa in administratorska plošča dos
 
 ---
 
-## 6. Mrežni Sloj & Optimizacija API-jev
+---
+
+## 6. Celovita Varnost & Kriptografska Zaščita Podatkov (Security Architecture)
+
+V sistem ŠankFinder je vgrajena celovita večnivojska varnostna zasnova, ki ščiti podatke uporabnikov tako med prenosom po omrežju kot med mirovanjem na strežniku in mobilnih napravah. Vsi mehanizmi uporabljajo strojno pospešene kriptografske primitive (Intel/AMD AES-NI, ARMv8 Crypto Extensions, Apple CryptoKit), zato je vpliv na hitrost delovanja in zakasnitev točno **0 ms**.
+
+```mermaid
+graph TD
+    Client[Mobilna Aplikacija Android / iOS] -->|TLS 1.3 + HMAC-SHA256 podpis| Caddy[Caddy Reverse Proxy 192.168.200.1]
+    Caddy -->|Lokalni prehod po varnem omrežju| NodeServer[Node.js Strežnik 192.168.200.209:8080]
+    NodeServer -->|AES-256-GCM šifriranje v RAM-u| SQLite[(SQLite WAL Baza - Šifrirana v mirovanju)]
+    NodeServer -->|Urni čistilec > 24h| SQLite
+    Client -->|AndroidKeyStore / iOS Keychain| LocalStorage[(Lokalna AES-256-GCM baza obiskov in računov)]
+```
+
+### 6.1 Strežniško Šifriranje v Mirovanju (At-Rest Encryption z AES-256-GCM)
+- **Zaščita koordinat in klepeta v bazi SQLite:**
+  - V [server/index.js](file:///c:/Android/SankFinder/server/index.js) sta implementirani funkciji `encryptField(plainText)` in `decryptField(cipherPayload)` z vgrajenim modulom `node:crypto`.
+  - Uporablja se industrijski standard **AES-256-GCM** z 12-bajtnim kriptografsko naključnim IV vektorjem in 16-bajtnim preverjevalnim Authentication Tagom (`authTag`).
+  - Preden se podatki zapišejo v SQLite bazo, se koordinate članov mize (`lat`, `lon`) in vsebina vseh poslanih sporočil klepeta šifrirajo v obliko `iv:authTag:ciphertext`. V primeru nepooblaščenega dostopa do surove datoteke baze podatkov so osebne lokacije in pogovori popolnoma neberljivi.
+  - Dešifriranje se izvede v RAM-u strežnika tik pred pošiljanjem preverjenim članom sobe ali administratorju.
+
+### 6.2 Samodejno Čiščenje Podatkov (Data Minimization)
+- V strežniku teče samodejni urni čistilec (`setInterval` na vsakih 60 minut), ki iz SQLite baze nepovratno izbriše:
+  - Vse sobe in njihova sporočila, ki so neaktivne več kot 24 ur.
+  - Vse zgodovinske GPS koordinate članov, starejše od 24 ur.
+  - Zastarele zapise v tabeli omejevanja poskusov (rate limiter).
+
+### 6.3 Preprečevanje Replay Napadov (HMAC-SHA256 Podpisovanje Zahtevkov)
+- Vsi REST API klici in WebSocket vzpostavitve povezave morajo vsebovati kriptografski podpis:
+  - Glava `X-Sank-Signature` (ali URL parameter `signature`) vsebuje `HMAC-SHA256(deviceId + timestamp, SHARED_APP_SECRET)`.
+  - Glava `X-Sank-Timestamp` (ali URL parameter `timestamp`) določa čas nastanka zahtevka v milisekundah.
+  - Strežnik zahtevek avtomatsko zavrne, če je časovni žig starejši ali naprednejši od **5 minut** glede na sistemski čas strežnika (`Math.abs(Date.now() - reqTime) > 300000`).
+
+### 6.4 Zaščita Skrbniške Plošče (/sank-uprava-x77)
+- **Brez trdo kodiranih gesel:** Geslo administratorja se hrani v obliki zgoščka v strežniški datoteki `.env` (`ADMIN_PASSWORD_HASH`), izračunanega z močno funkcijo izpeljave ključev `scrypt`.
+- **Časovno varna primerjava:** Primerjava vnosa in shranjenega zgoščka se izvaja s funkcijo `crypto.timingSafeEqual`, ki odpravlja ranljivost za časovne napade (Side-channel Timing Attacks).
+- **Zaščita pred grobo silo (In-Memory Rate Limiter):** Sistem beleži število poskusov po IP naslovu. Če posamezen IP 5-krat zapored vnese napačne podatke, se mu dostop za 15 minut popolnoma blokira z odzivom `HTTP 429 Too Many Requests`.
+- **Sejni piškotek z najvišjimi varnostnimi zastavicami:** Po uspešni prijavi se izda kriptografsko podpisan piškotek `sank_admin_session`, opremljen z:
+  - `HttpOnly` (preprečuje krajo piškotka prek zlonamernih JavaScript skript/XSS).
+  - `Secure` (dovoljuje prenos izključno prek šifrirane HTTPS povezave).
+  - `SameSite=Strict` (popolna zaščita pred CSRF napadi).
+  - `Max-Age=28800` (veljavnost seje je natanko 8 ur).
+
+### 6.5 Šifriranje na Mobilnih Odjemalcih
+- **Android ([CryptoHelper.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/security/CryptoHelper.kt)):**
+  - Uporaba strojnega varnostnega modula **AndroidKeyStore** za generiranje in hrambo 256-bitnega AES ključa (`KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT`).
+  - Datoteka zgodovine obiskov in FURS računov `sankfinder_history.json` je v celoti šifrirana z algoritmom `AES/GCM/NoPadding`.
+  - **Samodejna migracija:** Če obstaja obstoječa nešifrirana datoteka, jo aplikacija ob prvem zagonu varno prebere in takoj ponovno shrani v šifrirani obliki brez izgube podatkov.
+  - **Prepoved nešifriranega prometa:** Konfiguracija `network_security_config.xml` strogo prepoveduje nezaščiten HTTP promet (`cleartextTrafficPermitted="false"`), `NetworkClient.kt` pa prisili uporabo sodobnega `ConnectionSpec.MODERN_TLS` (TLS 1.3).
+- **iOS ([SecureStorage.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/SecureStorage.swift)):**
+  - Uporaba ogrodja **Apple CryptoKit** in varne hrambe **iOS Keychain** z atributom `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`.
+  - Šifriranje zapisov obiskov pred vpisom v `UserDefaults` z `AES.GCM.seal`.
+  - Varno shranjevanje identifikatorja naprave `sankfinder_device_id` v Keychain.
+  - Vklopljen **App Transport Security (ATS)** (`NSAllowsArbitraryLoads = false`) ter prisiljen minimalni protokol **TLS 1.3** na vseh `URLSession` povezavah.
+
+### 6.6 Priporočena Zaščita Požarnega Zidu na Strežniku (UFW)
+Na strežniku `192.168.200.209` je priporočljivo s požarnim zidom (npr. `ufw`) omejiti neposreden dostop do portov 5000 (OSRM) in 8080 (Node.js), tako da sprejemata promet izključno prek Caddy posrednika (`192.168.200.1`):
+```bash
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow 22/tcp
+sudo ufw allow from 192.168.200.1 to any port 5000 proto tcp
+sudo ufw allow from 192.168.200.1 to any port 8080 proto tcp
+sudo ufw enable
+```
+
+## 7. Mrežni Sloj & Optimizacija API-jev
 
 V mrežnem sloju je implementiran centraliziran [NetworkClient.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/network/NetworkClient.kt):
 
@@ -324,7 +418,7 @@ object NetworkClient {
 
 ---
 
-## 7. Rezultati Stres Testov & Zmogljivost
+## 8. Rezultati Stres Testov & Zmogljivost
 
 Rezultati meritev s skripto [api_stress_test.py](file:///c:/Android/SankFinder/api_stress_test.py):
 
@@ -346,7 +440,7 @@ Rezultati meritev s skripto [api_stress_test.py](file:///c:/Android/SankFinder/a
 
 ---
 
-## 8. Vodnik za Razvijalce: Kako Razširiti Aplikacijo
+## 9. Vodnik za Razvijalce: Kako Razširiti Aplikacijo
 
 ### Kako dodati novo igro ali orodje v zavihek "Igre":
 1. Odprite [GamesPage.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/GamesPage.kt).

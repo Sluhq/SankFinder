@@ -104,14 +104,36 @@ class HistoryManager: ObservableObject {
     
     private func saveVisits() {
         if let encoded = try? JSONEncoder().encode(visits) {
-            UserDefaults.standard.set(encoded, forKey: storageKey)
+            do {
+                let encrypted = try SecureStorage.shared.encrypt(data: encoded)
+                UserDefaults.standard.set(encrypted, forKey: storageKey)
+            } catch {
+                print("Napaka pri šifriranju zgodovine obiskov (AES-GCM): \(error.localizedDescription)")
+            }
         }
     }
     
     private func loadVisits() {
-        if let data = UserDefaults.standard.data(forKey: storageKey),
-           let decoded = try? JSONDecoder().decode([VisitRecord].self, from: data) {
-            self.visits = decoded
+        guard let data = UserDefaults.standard.data(forKey: storageKey) else { return }
+        
+        // 1. Samodejna varna migracija: če obstajajo stari nešifrirani JSON podatki (začne se z '[' ali '{')
+        if let firstByte = data.first, firstByte == 0x5B || firstByte == 0x7B {
+            if let decoded = try? JSONDecoder().decode([VisitRecord].self, from: data) {
+                self.visits = decoded
+                // Takoj ponovno shrani v varno šifrirani obliki
+                saveVisits()
+                return
+            }
+        }
+        
+        // 2. Dešifriranje s strojno pospešenim AES-256-GCM (CryptoKit)
+        do {
+            let decrypted = try SecureStorage.shared.decrypt(combinedData: data)
+            if let decoded = try? JSONDecoder().decode([VisitRecord].self, from: decrypted) {
+                self.visits = decoded
+            }
+        } catch {
+            print("Napaka pri dešifriranju zgodovine obiskov: \(error.localizedDescription)")
         }
     }
 }

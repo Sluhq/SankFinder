@@ -88,12 +88,17 @@ class SquadRepository {
         executeWithFallback { cfg ->
             val scheme = if (cfg.useSsl) "https" else "http"
             val url = "$scheme://${cfg.host}/api/rooms/create"
+            val timestamp = System.currentTimeMillis()
+            val signature = com.example.sankfinder.security.CryptoHelper.generateSignature(timestamp, "android_app")
             val json = JSONObject().apply {
                 put("name", roomName)
             }
             val body = RequestBody.create(JSON_MEDIA_TYPE, json.toString())
             val request = Request.Builder()
                 .url(url)
+                .header("X-Sank-Timestamp", timestamp.toString())
+                .header("X-Sank-Signature", signature)
+                .header("X-Device-Id", "android_app")
                 .post(body)
                 .build()
 
@@ -128,12 +133,17 @@ class SquadRepository {
         executeWithFallback { cfg ->
             val scheme = if (cfg.useSsl) "https" else "http"
             val url = "$scheme://${cfg.host}/api/rooms/join"
+            val timestamp = System.currentTimeMillis()
+            val signature = com.example.sankfinder.security.CryptoHelper.generateSignature(timestamp, "android_app")
             val json = JSONObject().apply {
                 put("code", codeUpper)
             }
             val body = RequestBody.create(JSON_MEDIA_TYPE, json.toString())
             val request = Request.Builder()
                 .url(url)
+                .header("X-Sank-Timestamp", timestamp.toString())
+                .header("X-Sank-Signature", signature)
+                .header("X-Device-Id", "android_app")
                 .post(body)
                 .build()
 
@@ -210,8 +220,15 @@ class SquadRepository {
 
         fun tryConnect(config: HostConfig, fallback: (() -> Unit)?) {
             val scheme = if (config.useSsl) "wss" else "ws"
-            val fullUrl = "$scheme://${config.host}/ws?code=${roomCode.trim().uppercase()}&name=${java.net.URLEncoder.encode(userName, "UTF-8")}&userId=$userId"
-            val request = Request.Builder().url(fullUrl).build()
+            val timestamp = System.currentTimeMillis()
+            val signature = com.example.sankfinder.security.CryptoHelper.generateSignature(timestamp, userId)
+            val fullUrl = "$scheme://${config.host}/ws?code=${roomCode.trim().uppercase()}&name=${java.net.URLEncoder.encode(userName, "UTF-8")}&userId=$userId&t=$timestamp&sig=$signature"
+            val request = Request.Builder()
+                .url(fullUrl)
+                .header("X-Sank-Timestamp", timestamp.toString())
+                .header("X-Sank-Signature", signature)
+                .header("X-Device-Id", userId)
+                .build()
 
             activeWebSocket = NetworkClient.webSocketOkHttpClient.newWebSocket(request, object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {

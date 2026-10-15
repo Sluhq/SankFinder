@@ -8,6 +8,8 @@ services:
     volumes:
       - ./data:/app/data
       - ./index.js:/app/index.js
+    env_file:
+      - .env
     environment:
       - PORT=8080
       - DATA_DIR=/app/data

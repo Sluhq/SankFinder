@@ -22,6 +22,8 @@
    - [5.6 Orodja & Igre (ToolsView.swift)](#56-orodja--igre-toolsviewswift)
    - [5.7 Pivska Klapa & Tracker Meni (SquadManager.swift & SquadView.swift)](#57-pivska-klapa--tracker-meni-squadmanagerswift--squadviewswift)
    - [5.8 Nastavitve & Globalno Uravnavanje Tipkovnice](#58-nastavitve--globalno-uravnavanje-tipkovnice)
+   - [5.9 Grafična Podoba, Logotip in Zagonski Zaslon](#59-grafična-podoba-logotip-in-zagonski--nalagalni-zaslon-splash-screen)
+   - [5.10 Celovita Kriptografska Zaščita & Varna Hramba iOS](#510-celovita-kriptografska-zaščita--varna-hramba-ios-cryptokit-keychain--tls-13)
 6. [Postopek Gradnje & Generiranje IPA Paketa (CI/CD)](#6-postopek-gradnje--generiranje-ipa-paketa-cicd)
 7. [Primerjalna Matrika Funkcionalnosti (iOS vs Android)](#7-primerjalna-matrika-funkcionalnosti-ios-vs-android)
 8. [Navodila za Razvijalce & Sinhronizacija z Androidom](#8-navodila-za-razvijalce--sinhronizacija-z-androidom)
@@ -97,8 +99,9 @@ c:/Android/SankFinder/iosApp/
 │   ├── SquadManager.swift               # Upravljavec WebSocket povezave, klepet in radarsko sledenje članom
 │   ├── LocationManager.swift            # CoreLocation ovijalec (GPS kCLLocationAccuracyBestForNavigation, 3.0 m filter, azimut)
 │   ├── LiveNavigationManager.swift      # Upravljavec zaklenjenega zaslona (Lock Screen HUD)
-│   ├── GlobalSyncManager.swift          # Sinhronizacija v ozadju in globalno upravljanje dogodkov
-│   ├── NetworkManager.swift             # REST in WebSocket mrežni klici z diagnostiko
+│   ├── GlobalSyncManager.swift          # Sinhronizacija v ozadju, TLS 1.3 konfiguracija in podpisani WS handshake
+│   ├── SecureStorage.swift              # CryptoKit AES-256-GCM šifriranje, Keychain varna hramba in HMAC-SHA256 podpisnik
+│   ├── NetworkManager.swift             # REST in WebSocket mrežni klici z obveznim TLS 1.3
 │   ├── NavigationBridge.swift           # Dvosmerni most za prekinitev navigacije iz obvestil
 │   ├── WatchConnectivityManager.swift   # WCSession most med iPhone in Apple Watch
 │   ├── HistoryManager.swift             # Upravljanje lokalne shrambe obiskov (UserDefaults)
@@ -309,6 +312,31 @@ Za vrhunsko uporabniško izkušnjo so vsi vnosni obrazci opremljeni z:
 
 ---
 
+### 5.10 Celovita Kriptografska Zaščita & Varna Hramba iOS (CryptoKit, Keychain & TLS 1.3)
+
+Aplikacija vsebuje visoko-varnostno arhitekturo, ki ščiti občutljive podatke uporabnika (lokacije, FURS račune z davčnimi podatki, zgodovino obiskov ter identifikatorje):
+
+1. **Varno upravljanje ključev ([SecureStorage.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/SecureStorage.swift)):**
+   - Ob prvem zagonu aplikacija prek Apple **CryptoKit** ustvari 256-bitni simetrični šifrirni ključ (`SymmetricKey(size: .bits256)`).
+   - Ključ se varno shrani v sistemski **iOS Keychain** z atributom `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`. To pomeni, da je ključ dostopen izključno po prvem odklepu naprave, je strojno zaščiten (Secure Enclave) in se nikoli ne prenese ob varnostnem kopiranju (iCloud / iTunes backup).
+2. **Lokalno šifriranje zgodovine obiskov & računov ([HistoryManager.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/HistoryManager.swift)):**
+   - Vsi zapisi obiskov (`[VisitRecord]`), zneski in prepoznani FURS računi se pred shranjevanjem v `UserDefaults.standard` šifrirajo z algoritmom **AES-256-GCM** (`AES.GCM.seal(data, using: key).combined!`).
+   - Pri branju se podatki avtomatsko dešifrirajo z `AES.GCM.open`.
+   - **Samodejna migracija obstoječih podatkov:** Ob prvem branju `HistoryManager` preveri, ali shramba vsebuje staro nešifrirano JSON vsebino. Če jo najde, podatke uspešno prebere in jih takoj ponovno shrani v šifrirani obliki, tako da uporabnik ne izgubi zgodovine obiskov.
+3. **Zaščita identifikatorja naprave (`sankfinder_device_id`):**
+   - Namesto v nezaščiten `UserDefaults` se stalni ID naprave hrani neposredno v iOS Keychain prek `SecureStorage.shared.getOrCreateDeviceId()`.
+4. **App Transport Security (ATS) & Obvezen TLS 1.3:**
+   - V [Info.plist](file:///c:/Android/SankFinder/iosApp/SankFinder/Info.plist) je vrednost `NSAllowsArbitraryLoads` nastavljena na `false`. Izjema `NSExceptionDomains` je dodeljena zgolj lokalnemu IP-ju za razvoj (`192.168.200.209`).
+   - V [NetworkManager.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/NetworkManager.swift), [SquadManager.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/SquadManager.swift) in [GlobalSyncManager.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/GlobalSyncManager.swift) je na ravni `URLSessionConfiguration` nastavljena stroga minimalna verzija protokola:
+     ```swift
+     configuration.tlsMinimumSupportedProtocolVersion = .TLSv13
+     ```
+   - Vsi omrežni klici so tako zaščiteni z najnovejšim protokolom TLS 1.3, ki zagotavlja 0-RTT/1-RTT hitrost in popolno varnost naprej (Forward Secrecy).
+5. **HMAC-SHA256 Podpisovanje Zahtevkov:**
+   - Ob vstopu v sobo Pivske Klape in vzpostavitvi WebSocket povezave aplikacija s funkcijo `SecureStorage.shared.createRequestSignature(deviceId:timestamp:)` izračuna podpis nad `deviceId + timestamp` ter ga pošlje v HTTP glavi `X-Sank-Signature` ali URL query parametru. S tem preprečuje ponarejanje zahtevkov in Replay napade.
+
+---
+
 ## 6. Postopek Gradnje & Generiranje IPA Paketa (CI/CD)
 
 Projekt uporablja avtomatiziran GitHub Actions cevovod na macOS tekaču (`macos-latest`):
@@ -349,6 +377,9 @@ Projekt uporablja avtomatiziran GitHub Actions cevovod na macOS tekaču (`macos-
 | **Radar prijateljev na zemljevidu** | Zlati označevalci brez grozdenja (`.required`) | Zlati označevalci z imenom in števcem pijač | 100 % Usklajeno |
 | **Zanesljiva offline baza (Fallback)** | 15 lokalov (Center, Krakovo, Šiška, Bežigrad) | 15 lokalov (Center, Krakovo, Šiška, Bežigrad) | 100 % Usklajeno |
 | **Filtriranje GPS natančnosti** | Zavrnitev `accuracy < 0`, preklop ob `accuracy <= 65m` | Zavrnitev grobih meritev, glajenje koordinat | 100 % Usklajeno |
+| **Šifriranje lokalnih podatkov (At-Rest)** | CryptoKit AES-256-GCM + Keychain ključ (Secure Enclave) | AndroidKeyStore AES-256-GCM šifrirana JSON shramba z migracijo | 100 % Usklajeno |
+| **Zaščita omrežnega sloja (Transport)** | Obvezen TLS 1.3 v URLSession, ATS NSAllowsArbitraryLoads=false | ConnectionSpec MODERN_TLS (TLS 1.3), prepoved cleartext prometa | 100 % Usklajeno |
+| **Podpisovanje zahtevkov (HMAC)** | HMAC-SHA256 podpis nad napravo in časovnim žigom (< 5 min) | HMAC-SHA256 podpis nad napravo in časovnim žigom (< 5 min) | 100 % Usklajeno |
 
 ---
 
