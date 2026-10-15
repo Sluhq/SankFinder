@@ -9,6 +9,7 @@
  */
 
 const http = require('http');
+const https = require('https');
 const url = require('url');
 const path = require('path');
 const fs = require('fs');
@@ -207,6 +208,8 @@ const stmtGetRecentPushNotifications = db.prepare(`
   SELECT * FROM push_notifications ORDER BY created_at DESC LIMIT 50
 `);
 const stmtCountPushNotifications = db.prepare(`SELECT count(*) as count FROM push_notifications`);
+const stmtDeletePushNotification = db.prepare('DELETE FROM push_notifications WHERE id = ?');
+const stmtCountTodayAppDevices = db.prepare("SELECT count(*) as count FROM app_devices WHERE first_seen >= datetime('now', '-24 hours')");
 
 // Nastavitve aplikacije
 const stmtGetSetting = db.prepare('SELECT value FROM app_settings WHERE key = ?');
@@ -554,6 +557,14 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // ADMIN ODJAVA (Izbris sejnega piškotka in preusmeritev)
+    if (pathname === '/sank-uprava-x77/logout') {
+        res.setHeader('Set-Cookie', 'sank_admin_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Strict');
+        res.writeHead(302, { 'Location': '/sank-uprava-x77' });
+        res.end();
+        return;
+    }
+
     // ADMIN API: PRIDOBI CELOVITE PODATKE ZA NADZORNO PLOŠČO
     if (pathname === '/api/admin/data') {
         if (isIpBlocked(clientIp)) {
@@ -573,11 +584,14 @@ const server = http.createServer((req, res) => {
         const messages = stmtGetAllMessages.all().map(sanitizeMessageRow);
         const totalDrinks = members.reduce((acc, m) => acc + (m.drinks_count || 0), 0);
 
-        // Seznam naprav z odprtim appom
+        // Seznam naprav z odprtim appom in razdelitev po OS
         const liveDevicesList = [];
+        let iosCount = 0;
+        let androidCount = 0;
+
         for (const [ws, dev] of appConnectedClients.entries()) {
             if (ws.readyState === WebSocket.OPEN) {
-                liveDevicesList.push({
+                const devObj = {
                     deviceId: dev.deviceId,
                     model: dev.model,
                     osVersion: dev.osVersion,
@@ -586,7 +600,15 @@ const server = http.createServer((req, res) => {
                     ip: dev.ip,
                     connectedAt: dev.connectedAt,
                     lastSeen: dev.lastSeen
-                });
+                };
+                liveDevicesList.push(devObj);
+
+                const checkStr = `${dev.model || ''} ${dev.osVersion || ''}`.toLowerCase();
+                if (checkStr.includes('ios') || checkStr.includes('iphone') || checkStr.includes('ipad') || checkStr.includes('apple')) {
+                    iosCount++;
+                } else {
+                    androidCount++;
+                }
             }
         }
 
@@ -599,21 +621,59 @@ const server = http.createServer((req, res) => {
         }
 
         const totalKnownCount = stmtCountAppDevices.get().count;
+        let todayCount = 0;
+        try { todayCount = stmtCountTodayAppDevices.get().count; } catch (e) {}
         const totalPushCount = stmtCountPushNotifications.get().count;
+        const lastPushSentAt = pushHistory.length > 0 ? pushHistory[0].created_at : null;
+
+        // Izračun top pivca večera
+        let topDrinker = null;
+        if (members.length > 0) {
+            const sortedMembers = [...members].sort((a, b) => (b.drinks_count || 0) - (a.drinks_count || 0));
+            if ((sortedMembers[0].drinks_count || 0) > 0) {
+                topDrinker = {
+                    name: sortedMembers[0].name,
+                    drinksCount: sortedMembers[0].drinks_count,
+                    roomCode: sortedMembers[0].room_code
+                };
+            }
+        }
+
+        // Velikost SQLite baze in WAL na disku
+        let dbSizeBytes = 0;
+        let walSizeBytes = 0;
+        try {
+            if (fs.existsSync(dbPath)) dbSizeBytes = fs.statSync(dbPath).size;
+            const walPath = `${dbPath}-wal`;
+            if (fs.existsSync(walPath)) walSizeBytes = fs.statSync(walPath).size;
+        } catch (e) {}
+
+        // Člani z veljavnimi GPS koordinatami za Live Radar zemljevid
+        const liveRadarMembers = members.filter(m => typeof m.lat === 'number' && typeof m.lon === 'number' && !isNaN(m.lat) && !isNaN(m.lon));
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({
             overview: {
                 onlineAppDevicesCount: liveDevicesList.length,
+                iosOnlineCount: iosCount,
+                androidOnlineCount: androidCount,
                 totalKnownDevicesCount: totalKnownCount,
+                todayNewDevicesCount: todayCount,
                 totalPushSentCount: totalPushCount,
+                lastPushSentAt: lastPushSentAt,
                 activeRoomsCount: rooms.length,
                 totalMembers: members.length,
                 totalMessages: messages.length,
                 totalDrinks: totalDrinks,
+                topDrinker: topDrinker,
                 uptimeSeconds: Math.floor(process.uptime()),
                 nodeVersion: process.version,
-                memoryUsageMb: Math.round(process.memoryUsage().rss / 1024 / 1024)
+                memoryRssMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+                memoryHeapMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+                dbSizeBytes: dbSizeBytes,
+                walSizeBytes: walSizeBytes,
+                openWebSockets: wss.clients.size,
+                caddyStatus: 'Deluje (TLS 1.3)'
             },
             liveDevices: liveDevicesList,
             allDevices: allKnownDevices,
@@ -621,12 +681,13 @@ const server = http.createServer((req, res) => {
             rooms: rooms,
             members: members,
             messages: messages,
-            settings: settingsMap
+            settings: settingsMap,
+            liveRadarMembers: liveRadarMembers
         }));
         return;
     }
 
-    // ADMIN API: POŠLJI GLOBALNO POTISNO OBVESTILO (NA CELOTEN APP ALI NAPRAVO)
+    // ADMIN API: POŠLJI GLOBALNO POTISNO OBVESTILO (Z IZBIRO CILJA IN PREDLOG)
     if (pathname === '/api/admin/push/send' && req.method === 'POST') {
         if (!checkAdminAuth(req)) {
             res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -642,7 +703,7 @@ const server = http.createServer((req, res) => {
                 const title = (data.title || 'ŠankFinder Obvestilo').trim();
                 const message = (data.message || '').trim();
                 const category = (data.category || 'splošno').trim();
-                const targetDeviceId = (data.targetDeviceId || '').trim();
+                const target = (data.target || 'all').trim(); // 'all', 'ios', 'android', 'room:CODE', 'device:ID'
 
                 if (!message) throw new Error('Besedilo sporočila ne sme biti prazno');
 
@@ -661,7 +722,25 @@ const server = http.createServer((req, res) => {
 
                 for (const [socket, dev] of appConnectedClients.entries()) {
                     if (socket.readyState === WebSocket.OPEN) {
-                        if (!targetDeviceId || dev.deviceId === targetDeviceId) {
+                        let matches = false;
+                        const osStr = `${dev.model || ''} ${dev.osVersion || ''}`.toLowerCase();
+                        const isIos = osStr.includes('ios') || osStr.includes('iphone') || osStr.includes('ipad') || osStr.includes('apple');
+
+                        if (target === 'all') {
+                            matches = true;
+                        } else if (target === 'ios') {
+                            matches = isIos;
+                        } else if (target === 'android') {
+                            matches = !isIos;
+                        } else if (target.startsWith('room:')) {
+                            const rCode = target.slice(5).toUpperCase();
+                            if (socket.user && socket.user.code === rCode) matches = true;
+                        } else if (target.startsWith('device:')) {
+                            const dId = target.slice(7);
+                            if (dev.deviceId === dId) matches = true;
+                        }
+
+                        if (matches) {
                             try {
                                 socket.send(payloadStr);
                                 sentCount++;
@@ -673,14 +752,40 @@ const server = http.createServer((req, res) => {
                 }
 
                 // Shrani v zgodovino potisnih obvestil
-                stmtInsertPushNotification.run(title, message, category, targetDeviceId || 'all', sentCount);
+                stmtInsertPushNotification.run(title, message, category, target, sentCount);
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
                     success: true,
-                    message: `Potisno obvestilo uspešno oddano na ${sentCount} naprav.`,
+                    message: `Potisno obvestilo uspešno oddano na ${sentCount} naprav (cilj: ${target}).`,
                     sentCount: sentCount
                 }));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return;
+    }
+
+    // ADMIN API: IZBRIS OBVESTILA IZ ZGODOVINE
+    if (pathname === '/api/admin/push/delete' && req.method === 'POST') {
+        if (!checkAdminAuth(req)) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Nepooblaščen dostop' }));
+            return;
+        }
+
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body || '{}');
+                const id = data.id;
+                if (!id) throw new Error('Manjka ID obvestila');
+                stmtDeletePushNotification.run(id);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, message: `Obvestilo ${id} izbrisano iz zgodovine.` }));
             } catch (err) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: err.message }));
@@ -717,7 +822,7 @@ const server = http.createServer((req, res) => {
                 }
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({ success: true, message: 'Nastavitve posodobljene.' }));
+                res.end(JSON.stringify({ success: true, message: 'Nastavitve uspešno posodobljene.' }));
             } catch (err) {
                 res.writeHead(400, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ error: err.message }));
@@ -746,7 +851,6 @@ const server = http.createServer((req, res) => {
             }));
         });
         osrmReq.on('error', (e) => {
-            // Poskusi se lokalno na 127.0.0.1
             const fallbackReq = http.get('http://127.0.0.1:5000/route/v1/driving/14.5058,46.0569;14.5100,46.0580?overview=false', { timeout: 2500 }, (fbRes) => {
                 const latency = Date.now() - t0;
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -764,7 +868,73 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // ADMIN API: SPOROČILA DOLOČENE SOBE
+    // ADMIN API: HITRI DIAGNOSTIČNI TEST VSEH STORITEV (OSRM PRIMARNI, FALLBACK IN GEOAPIFY)
+    if (pathname === '/api/admin/diagnostics') {
+        if (!checkAdminAuth(req)) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Nepooblaščen dostop' }));
+            return;
+        }
+
+        const results = {
+            osrmPrimary: { status: 'checking', latencyMs: -1 },
+            osrmFallback: { status: 'checking', latencyMs: -1 },
+            geoapify: { status: 'checking', latencyMs: -1 }
+        };
+
+        let pending = 3;
+        function finishCheck() {
+            pending--;
+            if (pending <= 0) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, diagnostics: results, timestamp: new Date().toISOString() }));
+            }
+        }
+
+        // 1. Primarni OSRM
+        const t0 = Date.now();
+        const osrmHost = process.env.OSRM_HOST || 'osrm-region:5000';
+        const req1 = http.get(`http://${osrmHost}/route/v1/driving/14.5058,46.0569;14.5100,46.0580?overview=false`, { timeout: 3000 }, (r1) => {
+            results.osrmPrimary = { status: r1.statusCode === 200 ? 'online' : 'error', code: r1.statusCode, latencyMs: Date.now() - t0 };
+            finishCheck();
+        });
+        req1.on('error', () => {
+            const req1fb = http.get('http://127.0.0.1:5000/route/v1/driving/14.5058,46.0569;14.5100,46.0580?overview=false', { timeout: 3000 }, (r1fb) => {
+                results.osrmPrimary = { status: r1fb.statusCode === 200 ? 'online' : 'error', code: r1fb.statusCode, latencyMs: Date.now() - t0 };
+                finishCheck();
+            });
+            req1fb.on('error', (e) => {
+                results.osrmPrimary = { status: 'offline', error: e.message, latencyMs: -1 };
+                finishCheck();
+            });
+        });
+
+        // 2. Rezervni OSRM (openstreetmap.de preko HTTPS)
+        const t2 = Date.now();
+        const req2 = https.get('https://routing.openstreetmap.de/routed-foot/route/v1/foot/14.5058,46.0569;14.5100,46.0580?overview=false', { timeout: 3500 }, (r2) => {
+            results.osrmFallback = { status: r2.statusCode === 200 ? 'online' : 'error', code: r2.statusCode, latencyMs: Date.now() - t2 };
+            finishCheck();
+        });
+        req2.on('error', (e) => {
+            results.osrmFallback = { status: 'offline', error: e.message, latencyMs: -1 };
+            finishCheck();
+        });
+
+        // 3. Geoapify Places API (preko HTTPS)
+        const t3 = Date.now();
+        const req3 = https.get('https://api.geoapify.com/v2/places?categories=catering.bar&filter=circle:14.5058,46.0569,1000&limit=1&apiKey=b2669a1530394868ae3a5abd6f38f7f2', { timeout: 3500 }, (r3) => {
+            results.geoapify = { status: r3.statusCode === 200 ? 'online' : 'error', code: r3.statusCode, latencyMs: Date.now() - t3 };
+            finishCheck();
+        });
+        req3.on('error', (e) => {
+            results.geoapify = { status: 'offline', error: e.message, latencyMs: -1 };
+            finishCheck();
+        });
+
+        return;
+    }
+
+    // ADMIN API: PRIDOBI SPOROČILA DOLOČENE SOBE
     if (pathname === '/api/admin/room/messages') {
         if (!checkAdminAuth(req, clientIp)) {
             res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -773,8 +943,9 @@ const server = http.createServer((req, res) => {
         }
         const code = (parsedUrl.query.code || '').toUpperCase();
         const msgs = stmtGetRecentMessages.all(code).map(sanitizeMessageRow).reverse();
+        const members = stmtGetMembers.all(code).map(sanitizeMemberRow);
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, messages: msgs }));
+        res.end(JSON.stringify({ success: true, messages: msgs, members: members }));
         return;
     }
 
@@ -797,7 +968,6 @@ const server = http.createServer((req, res) => {
                 const msgRow = stmtGetMessageById.get(id);
                 stmtDeleteMessage.run(id);
 
-                // Nemudoma obvesti vse v sobi, da se sporočilo odstrani z zaslona
                 if (msgRow && msgRow.room_code) {
                     broadcastToRoom(msgRow.room_code, {
                         type: 'message_deleted',
@@ -815,7 +985,7 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // ADMIN API: POŠLJI SPOROČILO V SOBO KOT SKRBNIK
+    // ADMIN API: POŠLJI SPOROČILO V SOBO KOT SKRBNIK (👑 ŠankFinder Uprava)
     if (pathname === '/api/admin/message/send' && req.method === 'POST') {
         if (!checkAdminAuth(req)) {
             res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -832,13 +1002,13 @@ const server = http.createServer((req, res) => {
                 const content = (data.content || '').trim();
                 if (!code || !content) throw new Error('Manjka koda sobe ali vsebina');
 
-                const resDb = stmtInsertMessage.run(code, 'admin', 'Uprava (Admin)', 'admin', content);
+                const resDb = stmtInsertMessage.run(code, 'admin', '👑 ŠankFinder Uprava', 'admin', content);
 
                 broadcastToRoom(code, {
                     type: 'new_message',
                     id: resDb.lastInsertRowid,
                     senderId: 'admin',
-                    senderName: 'Uprava (Admin)',
+                    senderName: '👑 ŠankFinder Uprava',
                     msgType: 'admin',
                     content: content,
                     createdAt: new Date().toISOString()
@@ -854,7 +1024,52 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // ADMIN API: IZBRIS SOBE
+    // ADMIN API: POPRAVEK ŠTEVILA PIJAČ ČLANA V ŽIVO (+ / - ali določena vrednost)
+    if (pathname === '/api/admin/member/drinks' && req.method === 'POST') {
+        if (!checkAdminAuth(req)) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Nepooblaščen dostop' }));
+            return;
+        }
+
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body || '{}');
+                const memberId = data.memberId;
+                const roomCode = (data.roomCode || '').toUpperCase();
+                const delta = Number(data.delta || 0);
+
+                if (!memberId || !roomCode) throw new Error('Manjka ID člana ali koda sobe');
+
+                const member = stmtGetMemberById.get(memberId);
+                if (!member) throw new Error('Član ne obstaja v bazi');
+
+                let newCount = (member.drinks_count || 0) + delta;
+                if (data.count !== undefined) newCount = Number(data.count);
+                if (newCount < 0) newCount = 0;
+
+                stmtUpdateMemberDrinks.run(newCount, memberId);
+
+                // Takoj sinhroniziraj s telefoni vseh članov v sobi
+                broadcastToRoom(roomCode, {
+                    type: 'drinks_updated',
+                    userId: memberId,
+                    drinksCount: newCount
+                });
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, drinksCount: newCount }));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return;
+    }
+
+    // ADMIN API: IZBRIS CELOTNE SOBE
     if (pathname === '/api/admin/room/delete' && req.method === 'POST') {
         if (!checkAdminAuth(req)) {
             res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -891,6 +1106,57 @@ const server = http.createServer((req, res) => {
             }
         });
         return;
+    }
+
+    // ADMIN API: ROČNO ČIŠČENJE STARIH SOB IN SPOROČIL (> 24 ur)
+    if (pathname === '/api/admin/db/clean' && req.method === 'POST') {
+        if (!checkAdminAuth(req)) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Nepooblaščen dostop' }));
+            return;
+        }
+
+        try {
+            const r1 = stmtCleanOldRooms.run();
+            const r2 = stmtCleanOldMembers.run();
+            const r3 = stmtCleanOldMessages.run();
+            try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch (e) {}
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+                success: true,
+                message: `Čiščenje uspešno zaključeno: odstranjeno ${r1.changes} neaktivnih sob, ${r2.changes} članov in ${r3.changes} sporočil.`
+            }));
+        } catch (err) {
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: err.message }));
+        }
+        return;
+    }
+
+    // ADMIN API: PRENOS VARNOSTNE KOPIJE SQLITE BAZE (SQUAD.DB)
+    if (pathname === '/api/admin/db/backup') {
+        if (!checkAdminAuth(req)) {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Nepooblaščen dostop' }));
+            return;
+        }
+
+        if (fs.existsSync(dbPath)) {
+            const dateStr = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+            const filename = `sankfinder_backup_${dateStr}.db`;
+            res.writeHead(200, {
+                'Content-Type': 'application/octet-stream',
+                'Content-Disposition': `attachment; filename="${filename}"`,
+                'Content-Length': fs.statSync(dbPath).size
+            });
+            fs.createReadStream(dbPath).pipe(res);
+            return;
+        } else {
+            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Baza podatkov še ne obstaja na disku.');
+            return;
+        }
     }
 
     // JAVNI API: USTVARJANJE SOBE (za Pivsko Klapo)
@@ -1239,11 +1505,18 @@ function renderAdminDashboardHtml() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ŠankFinder | Razvojna Nadzorna Plošča (Celoten App)</title>
+  <title>ŠankFinder | Nadzorni Center (Command Center)</title>
   <link rel="icon" type="image/png" href="/logo.png">
   <link rel="shortcut icon" type="image/png" href="/logo.png">
   <link rel="apple-touch-icon" href="/logo.png">
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  
+  <!-- Leaflet.js za Live Radar zemljevid -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <!-- Pisave -->
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+
   <style>
     :root {
       --bg: #090d16;
@@ -1262,6 +1535,7 @@ function renderAdminDashboardHtml() {
       --purple: #8b5cf6;
       --purple-bg: rgba(139, 92, 246, 0.15);
       --border: #222f47;
+      --border-subtle: rgba(255, 255, 255, 0.07);
       --text: #f8fafc;
       --text-muted: #94a3b8;
     }
@@ -1277,13 +1551,14 @@ function renderAdminDashboardHtml() {
     header {
       background: var(--sidebar-bg);
       border-bottom: 1px solid var(--border);
-      padding: 14px 28px;
+      padding: 12px 24px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       position: sticky;
       top: 0;
-      z-index: 50;
+      z-index: 1000;
+      backdrop-filter: blur(8px);
     }
     .brand {
       display: flex;
@@ -1294,20 +1569,20 @@ function renderAdminDashboardHtml() {
       background: var(--gold-bg);
       color: var(--gold);
       border: 1px solid rgba(245, 158, 11, 0.3);
-      padding: 4px 10px;
+      padding: 3px 8px;
       border-radius: 6px;
       font-size: 11px;
       font-weight: 800;
-      letter-spacing: 1px;
+      letter-spacing: 0.8px;
     }
-    .brand-title { font-size: 18px; font-weight: 800; }
+    .brand-title { font-size: 17px; font-weight: 800; }
     .status-badge {
       display: inline-flex;
       align-items: center;
       gap: 6px;
       background: var(--green-bg);
       color: var(--green);
-      padding: 5px 12px;
+      padding: 4px 10px;
       border-radius: 20px;
       font-size: 12px;
       font-weight: 700;
@@ -1319,6 +1594,12 @@ function renderAdminDashboardHtml() {
       background: var(--green);
       border-radius: 50%;
       box-shadow: 0 0 8px var(--green);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.95); opacity: 0.8; }
+      50% { transform: scale(1.2); opacity: 1; }
+      100% { transform: scale(0.95); opacity: 0.8; }
     }
 
     /* NAVIGACIJSKI MENI */
@@ -1327,16 +1608,16 @@ function renderAdminDashboardHtml() {
       border-bottom: 1px solid var(--border);
       display: flex;
       gap: 4px;
-      padding: 0 28px;
+      padding: 0 24px;
       overflow-x: auto;
     }
     .tab-btn {
       background: transparent;
       color: var(--text-muted);
       border: none;
-      padding: 14px 20px;
+      padding: 13px 18px;
       font-family: inherit;
-      font-size: 13.5px;
+      font-size: 13px;
       font-weight: 700;
       cursor: pointer;
       display: inline-flex;
@@ -1367,8 +1648,8 @@ function renderAdminDashboardHtml() {
 
     /* GLAVNI PROSTOR */
     .content {
-      padding: 24px 28px;
-      max-width: 1400px;
+      padding: 20px 24px;
+      max-width: 1440px;
       width: 100%;
       margin: 0 auto;
       flex: 1;
@@ -1380,34 +1661,43 @@ function renderAdminDashboardHtml() {
     /* STATISTIČNE KARTICE */
     .stats-row {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 16px;
-      margin-bottom: 24px;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
     }
     .stat-card {
       background: var(--card-bg);
       border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 18px 20px;
+      border-radius: 12px;
+      padding: 16px 18px;
       position: relative;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .stat-card:hover {
+      border-color: rgba(245, 158, 11, 0.35);
+      transform: translateY(-1px);
     }
     .stat-label {
-      font-size: 11.5px;
+      font-size: 11px;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.6px;
       color: var(--text-muted);
       font-weight: 700;
     }
     .stat-number {
-      font-size: 28px;
+      font-size: 26px;
       font-weight: 800;
       color: var(--gold);
-      margin-top: 6px;
+      margin-top: 4px;
+      font-family: 'JetBrains Mono', monospace;
     }
     .stat-sub {
       font-size: 11px;
       color: var(--text-muted);
       margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
     }
 
     /* PANELI */
@@ -1415,8 +1705,8 @@ function renderAdminDashboardHtml() {
       background: var(--card-bg);
       border: 1px solid var(--border);
       border-radius: 14px;
-      padding: 22px;
-      margin-bottom: 24px;
+      padding: 20px;
+      margin-bottom: 20px;
     }
     .panel-header {
       display: flex;
@@ -1424,26 +1714,29 @@ function renderAdminDashboardHtml() {
       align-items: center;
       margin-bottom: 16px;
       flex-wrap: wrap;
-      gap: 12px;
+      gap: 10px;
     }
     .panel-title {
-      font-size: 16px;
+      font-size: 15.5px;
       font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 8px;
     }
     .search-input {
       background: #090e18;
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 8px 14px;
+      padding: 7px 12px;
       border-radius: 8px;
       font-family: inherit;
-      font-size: 13px;
-      width: 260px;
+      font-size: 12.5px;
+      width: 240px;
       outline: none;
       transition: border-color 0.2s;
     }
     .search-input:focus { border-color: var(--gold); }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+    table { width: 100%; border-collapse: collapse; font-size: 12.5px; text-align: left; }
     th {
       color: var(--text-muted);
       font-size: 11px;
@@ -1453,7 +1746,7 @@ function renderAdminDashboardHtml() {
       padding: 10px 12px;
       border-bottom: 1px solid var(--border);
     }
-    td { padding: 12px; border-bottom: 1px solid rgba(34, 47, 71, 0.4); }
+    td { padding: 11px 12px; border-bottom: 1px solid rgba(34, 47, 71, 0.4); }
     tr:last-child td { border-bottom: none; }
     tr:hover td { background: rgba(255,255,255,0.015); }
     .mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
@@ -1461,10 +1754,11 @@ function renderAdminDashboardHtml() {
       background: var(--gold-bg);
       color: var(--gold);
       border: 1px solid rgba(245, 158, 11, 0.3);
-      padding: 3px 7px;
-      border-radius: 6px;
+      padding: 2px 6px;
+      border-radius: 5px;
       font-weight: 700;
       font-family: 'JetBrains Mono', monospace;
+      font-size: 11.5px;
     }
 
     /* GUMBI */
@@ -1472,24 +1766,31 @@ function renderAdminDashboardHtml() {
       background: var(--gold);
       color: #000;
       border: none;
-      padding: 8px 16px;
-      border-radius: 8px;
+      padding: 7px 14px;
+      border-radius: 7px;
       font-family: inherit;
       font-weight: 700;
-      font-size: 12.5px;
+      font-size: 12px;
       cursor: pointer;
       display: inline-flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       transition: all 0.2s;
     }
     .btn:hover { background: var(--gold-hover); }
+    .btn-sm { padding: 4px 9px; font-size: 11px; }
     .btn-blue {
       background: var(--blue-bg);
       color: #60a5fa;
       border: 1px solid rgba(59, 130, 246, 0.3);
     }
     .btn-blue:hover { background: var(--blue); color: #fff; }
+    .btn-green {
+      background: var(--green-bg);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .btn-green:hover { background: var(--green); color: #000; }
     .btn-red {
       background: var(--red-bg);
       color: #f87171;
@@ -1498,29 +1799,171 @@ function renderAdminDashboardHtml() {
     .btn-red:hover { background: var(--red); color: #fff; }
 
     /* OBRAZEC */
-    .form-group { margin-bottom: 16px; }
-    .form-group label { display: block; font-size: 12px; font-weight: 700; color: var(--text-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .form-group { margin-bottom: 14px; }
+    .form-group label { display: block; font-size: 11.5px; font-weight: 700; color: var(--text-muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.5px; }
     .form-control {
       width: 100%;
       background: #090e18;
       border: 1px solid var(--border);
       color: var(--text);
-      padding: 10px 12px;
+      padding: 9px 12px;
       border-radius: 8px;
       font-family: inherit;
-      font-size: 13.5px;
+      font-size: 13px;
       outline: none;
     }
     .form-control:focus { border-color: var(--gold); }
-    textarea.form-control { resize: vertical; min-height: 80px; }
+    textarea.form-control { resize: vertical; min-height: 75px; }
 
     .grid-2 {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 20px;
+      gap: 18px;
     }
-    @media (max-width: 900px) {
+    @media (max-width: 950px) {
       .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* PREDLOGE IN ČIPI */
+    .chips-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 12px;
+    }
+    .chip-btn {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 20px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .chip-btn:hover {
+      background: var(--gold-bg);
+      color: var(--gold);
+      border-color: var(--gold);
+    }
+
+    /* TELEFONSKI PREDOGLED V ŽIVO */
+    .phone-preview-card {
+      background: #090e17;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .phone-top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 700;
+    }
+    .lockscreen-notif {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      backdrop-filter: blur(16px);
+      border-radius: 12px;
+      padding: 12px 14px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+    .notif-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+    .notif-app-name { font-size: 11px; font-weight: 700; color: #cbd5e1; text-transform: uppercase; letter-spacing: 0.5px; }
+    .notif-time { font-size: 10px; color: #64748b; margin-left: auto; }
+    .notif-title { font-size: 13px; font-weight: 700; color: #f8fafc; margin-bottom: 2px; }
+    .notif-body { font-size: 12px; color: #cbd5e1; line-height: 1.35; }
+
+    /* LEAFLET LIVE RADAR PRILAGODITVE */
+    #live-radar-map {
+      height: 380px;
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      z-index: 10;
+    }
+    .custom-radar-icon {
+      background: transparent;
+      border: none;
+    }
+    .radar-pin-wrap {
+      position: relative;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .radar-pulse {
+      position: absolute;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(245, 158, 11, 0.28);
+      animation: pinPulse 2s infinite ease-out;
+    }
+    @keyframes pinPulse {
+      0% { transform: scale(0.6); opacity: 1; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+    .radar-pin {
+      position: relative;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #f59e0b;
+      border: 2px solid #ffffff;
+      color: #000;
+      font-weight: 800;
+      font-size: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 10px rgba(245, 158, 11, 0.6);
+    }
+    .radar-drinks-pill {
+      position: absolute;
+      top: -6px;
+      right: -6px;
+      background: #000000;
+      color: #f59e0b;
+      border: 1px solid #f59e0b;
+      border-radius: 10px;
+      padding: 1px 4px;
+      font-size: 9px;
+      font-weight: 800;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    /* OSRM SPARKLINE GRAF */
+    .sparkline-wrap {
+      display: flex;
+      align-items: flex-end;
+      gap: 3px;
+      height: 24px;
+      margin-top: 6px;
+    }
+    .spark-bar {
+      flex: 1;
+      background: var(--green);
+      border-radius: 2px;
+      min-width: 4px;
+      transition: height 0.3s;
     }
 
     /* MODAL ZA KLEPET */
@@ -1528,9 +1971,9 @@ function renderAdminDashboardHtml() {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0,0,0,0.75);
-      backdrop-filter: blur(4px);
-      z-index: 100;
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(5px);
+      z-index: 2000;
       justify-content: center;
       align-items: center;
       padding: 16px;
@@ -1540,66 +1983,105 @@ function renderAdminDashboardHtml() {
       border: 1px solid var(--border);
       border-radius: 16px;
       width: 100%;
-      max-width: 650px;
-      max-height: 85vh;
+      max-width: 860px;
+      max-height: 88vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.6);
     }
     .modal-head {
-      padding: 16px 20px;
+      padding: 14px 20px;
       border-bottom: 1px solid var(--border);
       display: flex;
       justify-content: space-between;
       align-items: center;
+      background: #0c1424;
     }
     .modal-body {
-      padding: 16px 20px;
+      padding: 0;
+      overflow: hidden;
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 280px;
+      max-height: 520px;
+    }
+    @media (max-width: 768px) {
+      .modal-body { grid-template-columns: 1fr; }
+    }
+    .modal-chat-pane {
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid var(--border);
+      height: 100%;
+    }
+    .modal-messages {
+      padding: 14px;
       overflow-y: auto;
       flex: 1;
       display: flex;
       flex-direction: column;
-      gap: 10px;
-      max-height: 400px;
+      gap: 8px;
+    }
+    .modal-members-pane {
+      background: #0d1424;
+      padding: 14px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
     .msg-bubble {
       background: #1a2538;
-      padding: 10px 14px;
-      border-radius: 10px;
+      padding: 8px 12px;
+      border-radius: 8px;
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 10px;
+      gap: 8px;
     }
     .msg-sender { font-size: 11px; font-weight: 800; color: var(--gold); }
-    .msg-text { font-size: 13px; margin-top: 3px; }
+    .msg-text { font-size: 12.5px; margin-top: 2px; }
     .modal-foot {
-      padding: 14px 20px;
+      padding: 12px 18px;
       border-top: 1px solid var(--border);
       display: flex;
       gap: 10px;
-      background: #0d1524;
+      background: #0c1424;
     }
   </style>
 </head>
 <body>
 
+  <!-- GLAVA (HEADER) -->
   <header>
     <div class="brand">
       <img src="/logo.png" alt="ŠankFinder Logo" style="height: 38px; width: 38px; object-fit: contain; filter: drop-shadow(0 2px 8px rgba(245, 158, 11, 0.45));">
       <span class="badge-tag">UPRAVA</span>
-      <h1 class="brand-title">ŠankFinder Nadzorna Plošča (Celoten App)</h1>
+      <h1 class="brand-title">ŠankFinder Nadzorni Center</h1>
     </div>
-    <div style="display:flex; align-items:center; gap: 12px;">
+
+    <div style="display:flex; align-items:center; gap: 10px; flex-wrap: wrap;">
       <div class="status-badge">
         <span class="pulse-dot"></span>
         Strežnik Aktiven
       </div>
-      <button class="btn" onclick="fetchData()">Osveži</button>
+
+      <span class="mono" style="font-size:11.5px; color:var(--text-muted); background:rgba(255,255,255,0.05); padding:4px 8px; border-radius:6px; border:1px solid var(--border);" id="server-uptime">
+        Uptime: 0d 0h 0m
+      </span>
+
+      <span style="font-size:11.5px; color:var(--text-muted); display:inline-flex; align-items:center; gap:5px; background:rgba(255,255,255,0.03); padding:4px 8px; border-radius:6px; border:1px solid var(--border);">
+        <span class="pulse-dot" style="background:var(--blue); box-shadow:0 0 6px var(--blue);"></span>
+        Osvežitev: <b id="refresh-countdown" style="color:var(--text);">5s</b>
+      </span>
+
+      <button class="btn btn-green btn-sm" onclick="fetchData()">⚡ Osveži</button>
+      <a href="/sank-uprava-x77/logout" class="btn btn-red btn-sm" style="text-decoration:none;">🚪 Odjava</a>
     </div>
   </header>
 
-  <!-- NAVIGACIJSKI MENI (5 ZAVIHKOV ZA CELOTEN APP) -->
+  <!-- NAVIGACIJSKI ZAVIHKI (5 ZAVIHKOV) -->
   <div class="tabs-bar">
     <button class="tab-btn active" onclick="switchTab('overview')">
       Pregled Aplikacije
@@ -1623,139 +2105,221 @@ function renderAdminDashboardHtml() {
 
   <div class="content">
 
-    <!-- ZAVIHEK 1: GLAVNI PREGLED CELOTNE APLIKACIJE -->
+    <!-- ZAVIHEK 1: GLAVNI PREGLED (6 OBOGATENIH KPI KARTIC + LEAFLET LIVE RADAR + STORITVE) -->
     <div class="tab-pane active" id="tab-overview">
       <div class="stats-row">
+        <!-- 1. Aktivne naprave v živo -->
         <div class="stat-card">
           <div class="stat-label">Aktivne Naprave v Živo</div>
           <div class="stat-number" id="stat-online-devices" style="color: var(--green);">0</div>
-          <div class="stat-sub">Trenutno odprta aplikacija</div>
+          <div class="stat-sub">
+            <span class="badge-tag" style="background:rgba(59,130,246,0.15); color:#60a5fa; font-size:10px;">🍎 iOS: <b id="stat-ios-count">0</b></span>
+            <span class="badge-tag" style="background:rgba(16,185,129,0.15); color:#34d399; font-size:10px;">🤖 Android: <b id="stat-android-count">0</b></span>
+          </div>
         </div>
+
+        <!-- 2. Vse registrirane naprave -->
         <div class="stat-card">
           <div class="stat-label">Vse Registrirane Naprave</div>
           <div class="stat-number" id="stat-total-devices">0</div>
-          <div class="stat-sub">Baza znanih namestitev</div>
+          <div class="stat-sub">
+            <span style="color:var(--green); font-weight:700;" id="stat-today-devices">+0 danes</span>
+            <span>• V SQLite bazi</span>
+          </div>
         </div>
+
+        <!-- 3. Poslana Push obvestila -->
         <div class="stat-card">
           <div class="stat-label">Poslana Push Obvestila</div>
           <div class="stat-number" id="stat-push-sent" style="color: var(--blue);">0</div>
-          <div class="stat-sub">Dostavljena na telefone</div>
+          <div class="stat-sub" id="stat-last-push">Zadnje: /</div>
         </div>
+
+        <!-- 4. Aktivne Pivske Klape -->
         <div class="stat-card">
           <div class="stat-label">Aktivne Pivske Klape</div>
           <div class="stat-number" id="stat-rooms">0</div>
-          <div class="stat-sub">Sobe v teku</div>
+          <div class="stat-sub"><span id="stat-active-members-count" style="font-weight:700; color:var(--text);">0</span> članov v sobah</div>
         </div>
+
+        <!-- 5. Skupaj štetih pijač -->
         <div class="stat-card">
           <div class="stat-label">Skupaj Štetih Pijač</div>
           <div class="stat-number" id="stat-drinks">0</div>
-          <div class="stat-sub">Osebni pivski seštevki</div>
+          <div class="stat-sub" id="stat-top-drinker">Top pivec: /</div>
         </div>
+
+        <!-- 6. OSRM Usmerjevalnik z zgodovino -->
         <div class="stat-card">
           <div class="stat-label">OSRM Usmerjevalnik</div>
-          <div class="stat-number" id="stat-osrm" style="font-size: 20px; margin-top: 10px; color: var(--green);">Preverjam...</div>
-          <div class="stat-sub" id="stat-osrm-sub">Lokalni usmerjevalnik</div>
+          <div class="stat-number" id="stat-osrm" style="font-size: 22px;">0 ms</div>
+          <div class="sparkline-wrap" id="osrm-sparkline">
+            <!-- 10 stolpcev mini zgodovine -->
+          </div>
         </div>
       </div>
 
+      <!-- SREDINSKI SKLOP: ZEMLJEVID AKTIVNIH KLAP V ŽIVO (LEAFLET.JS) -->
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">
+            🛰️ Zemljevid Aktivnih Klap & Uporabnikov v Živo (Live Radar)
+            <span class="status-badge" style="background:rgba(245, 158, 11, 0.15); color:var(--gold); border-color:rgba(245, 158, 11, 0.3);" id="radar-live-count">
+              0 uporabnikov na zemljevidu
+            </span>
+          </h2>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-sm btn-blue" onclick="centerOnLjubljana()">🎯 Centriraj na Ljubljano</button>
+            <button class="btn btn-sm" onclick="fitRadarBounds()">✨ Prilagodi pogled na vse</button>
+          </div>
+        </div>
+        <div id="live-radar-map"></div>
+      </div>
+
+      <!-- SPODNJI DVOJNI SKLOP: HITRI PUSH S PREDOGLEDOM + TELEMETRIJA STORITEV -->
       <div class="grid-2">
+        <!-- LEVO: HITRO PUSH OBVESTILO Z VIZUALNIM PREDOGLEDOM -->
         <div class="panel">
           <div class="panel-header">
-            <h2 class="panel-title">Hitro Push Obvestilo za Vse Uporabnike</h2>
+            <h2 class="panel-title">📢 Hitro Push Obvestilo za Naprave</h2>
           </div>
+
+          <div class="chips-row">
+            <span style="font-size:11px; font-weight:700; color:var(--text-muted); align-self:center;">Predloge:</span>
+            <button class="chip-btn" onclick="applyTemplate('happy_hour')">🍻 Happy Hour!</button>
+            <button class="chip-btn" onclick="applyTemplate('burek')">🥐 Burek Pavza?</button>
+            <button class="chip-btn" onclick="applyTemplate('update')">🔄 Posodobitev</button>
+            <button class="chip-btn" onclick="applyTemplate('uprava')">👑 Uprava sporoča</button>
+          </div>
+
+          <div class="form-group">
+            <label>Ciljna Skupina (Target)</label>
+            <select class="form-control" id="quick-push-target" onchange="onTargetChange()">
+              <option value="all">🌐 Vsi uporabniki (iOS & Android)</option>
+              <option value="ios">🍎 Samo iOS naprave (Apple)</option>
+              <option value="android">🤖 Samo Android naprave</option>
+              <option value="room">🍻 Določena Pivska Klapa (vnos kode)</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="group-room-code" style="display:none;">
+            <label>Koda Pivske Klape (4 znaki)</label>
+            <input type="text" class="form-control mono" id="quick-push-room-code" maxlength="4" placeholder="Npr. 7K2B" style="text-transform:uppercase;">
+          </div>
+
           <div class="form-group">
             <label>Naslov Obvestila</label>
-            <input type="text" class="form-control" id="quick-push-title" placeholder="Npr. Petkov Happy Hour v Ljubljani!">
+            <input type="text" class="form-control" id="quick-push-title" placeholder="Npr. Petkov Happy Hour v Ljubljani!" oninput="updateLivePreview()">
           </div>
+
           <div class="form-group">
-            <label>Sporočilo</label>
-            <textarea class="form-control" id="quick-push-msg" placeholder="Vnesite kratko obvestilo, ki se bo prikazalo vsem uporabnikom..."></textarea>
+            <label>Besedilo Sporočila</label>
+            <textarea class="form-control" id="quick-push-msg" placeholder="Vnesite sporočilo, ki se bo prikazalo na telefonih..." oninput="updateLivePreview()"></textarea>
           </div>
-          <button class="btn" onclick="sendQuickPush()">Pošlji Vsem Uporabnikom</button>
+
+          <!-- TELEFONSKI PREDOGLED V ŽIVO -->
+          <div class="phone-preview-card">
+            <div class="phone-top-bar">
+              <span id="preview-clock">21:30</span>
+              <span>Predogled na zaklenjenem zaslonu</span>
+              <span>🔋 92%</span>
+            </div>
+            <div class="lockscreen-notif">
+              <div class="notif-header">
+                <img src="/logo.png" style="width: 18px; height: 18px; object-fit: contain;">
+                <span class="notif-app-name">ŠankFinder</span>
+                <span class="notif-time">pravkar</span>
+              </div>
+              <div class="notif-title" id="preview-title">Naslov obvestila bo tukaj...</div>
+              <div class="notif-body" id="preview-body">Besedilo potisnega obvestila, kot ga bo videl uporabnik na svojem zaklenjenem zaslonu telefona.</div>
+            </div>
+          </div>
+
+          <div style="margin-top:14px;">
+            <button class="btn" style="width:100%; justify-content:center; padding:10px;" onclick="sendQuickPush()">
+              🚀 Pošlji Potisno Obvestilo
+            </button>
+          </div>
         </div>
 
+        <!-- DESNO: STANJE SISTEMSKIH STORITEV IN TELEMETRIJA -->
         <div class="panel">
           <div class="panel-header">
-            <h2 class="panel-title">Stanje Sistemskih Storitev</h2>
+            <h2 class="panel-title">⚙️ Stanje Sistemskih Storitev & Telemetrija</h2>
+            <button class="btn btn-sm btn-blue" onclick="runDiagnostics()">⚡ Hitri Test API-jev</button>
           </div>
+
           <table>
             <thead>
-              <tr><th>Storitev</th><th>Vrata / Protokol</th><th>Stanje</th></tr>
+              <tr><th>Storitev</th><th>Vrata / Podatki</th><th>Stanje</th></tr>
             </thead>
             <tbody>
               <tr>
-                <td><strong>Nginx Reverse Proxy</strong></td>
-                <td class="mono">Port 80/443 (SSL)</td>
-                <td><span style="color: var(--green); font-weight: 700;">Deluje</span></td>
+                <td><strong>Caddy Reverse Proxy</strong></td>
+                <td class="mono">sankfinder.sluga.me (TLS 1.3)</td>
+                <td><span style="color: var(--green); font-weight: 700;">Deluje (HSTS)</span></td>
               </tr>
               <tr>
                 <td><strong>OSRM Slovenija Usmerjevalnik</strong></td>
                 <td class="mono">Port 5000 (HTTP)</td>
-                <td id="osrm-service-status"><span style="color: var(--green); font-weight: 700;">Deluje</span></td>
+                <td id="osrm-service-status"><span style="color: var(--green); font-weight: 700;">Preverjam...</span></td>
+              </tr>
+              <tr>
+                <td><strong>OSRM Fallback (openstreetmap.de)</strong></td>
+                <td class="mono">Javni OSRM API (HTTPS)</td>
+                <td id="osrm-fallback-status"><span style="color: var(--text-muted);">Pripravljen</span></td>
               </tr>
               <tr>
                 <td><strong>ŠankFinder Master Gateway</strong></td>
-                <td class="mono">Port 8080 (WS/REST)</td>
-                <td><span style="color: var(--green); font-weight: 700;">Aktiven (Node)</span></td>
+                <td class="mono">Port 8080 (Node.js)</td>
+                <td id="gateway-telemetry"><span style="color: var(--green); font-weight: 700;">Deluje</span></td>
               </tr>
               <tr>
                 <td><strong>SQLite Baza (WAL)</strong></td>
-                <td class="mono">data/squad.db</td>
+                <td class="mono" id="db-file-sizes">data/squad.db</td>
                 <td><span style="color: var(--green); font-weight: 700;">Povezana</span></td>
               </tr>
             </tbody>
           </table>
+
+          <div style="margin-top:18px; padding-top:14px; border-top:1px solid var(--border); display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn btn-blue btn-sm" onclick="cleanOldRooms()">
+              🧹 Počisti neaktivne sobe (> 24h)
+            </button>
+            <a href="/api/admin/db/backup" class="btn btn-sm" style="text-decoration:none;">
+              💾 Prenesi varnostno kopijo (.db)
+            </a>
+          </div>
+
+          <div id="diagnostics-box" style="margin-top:14px; display:none; background:#090e18; padding:12px; border-radius:8px; border:1px solid var(--border); font-size:12px;">
+            <div style="font-weight:700; color:var(--gold); margin-bottom:6px;">📊 Rezultati Diagnostičnega Testiranja:</div>
+            <div id="diag-details"></div>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- ZAVIHEK 2: GLOBALNA PUSH OBVESTILA -->
     <div class="tab-pane" id="tab-push">
-      <div class="grid-2">
-        <div class="panel">
-          <div class="panel-header">
-            <h2 class="panel-title">Center za Potisna Obvestila (Push Center)</h2>
-          </div>
-          <div class="form-group">
-            <label>Naslov Obvestila</label>
-            <input type="text" class="form-control" id="push-title" placeholder="Npr. Akcija v lokalih ali Novo obvestilo">
-          </div>
-          <div class="form-group">
-            <label>Vsebina Obvestila</label>
-            <textarea class="form-control" id="push-message" placeholder="Besedilo obvestila, ki ga telefon prikaže kot sistemsko obvestilo z zvokom in vibracijo..."></textarea>
-          </div>
-          <div class="form-group">
-            <label>Kategorija</label>
-            <select class="form-control" id="push-category">
-              <option value="splosno">Splošno obvestilo</option>
-              <option value="happy_hour">Akcija / Happy Hour</option>
-              <option value="pomembno">Nujno tehnično opozorilo</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>Ciljna Naprava</label>
-            <select class="form-control" id="push-target">
-              <option value="">Vsi uporabniki aplikacije (Globalni broadcast)</option>
-            </select>
-          </div>
-          <button class="btn" onclick="sendGlobalPush()">Pošlji Potisno Obvestilo na Telefone</button>
+      <div class="panel">
+        <div class="panel-header">
+          <h2 class="panel-title">Zgodovina Poslanih Potisnih Obvestil</h2>
+          <span class="mono" id="push-history-count" style="font-size:12px; color:var(--text-muted);">0 obvestil</span>
         </div>
-
-        <div class="panel">
-          <div class="panel-header">
-            <h2 class="panel-title">Zgodovina Poslanih Potisnih Obvestil</h2>
-          </div>
+        <div style="overflow-x:auto;">
           <table>
             <thead>
               <tr>
-                <th>Čas</th>
-                <th>Naslov</th>
-                <th>Vsebina</th>
-                <th>Doseg</th>
+                <th>ID</th>
+                <th>Naslov & Sporočilo</th>
+                <th>Cilj</th>
+                <th>Prejemniki</th>
+                <th>Čas Pošiljanja</th>
+                <th>Dejanja</th>
               </tr>
             </thead>
-            <tbody id="push-history-body">
-              <tr><td colspan="4" style="text-align:center; color: var(--text-muted);">Ni preteklih obvestil.</td></tr>
+            <tbody id="push-history-tbody">
+              <tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Nalaganje zgodovine...</td></tr>
             </tbody>
           </table>
         </div>
@@ -1766,47 +2330,33 @@ function renderAdminDashboardHtml() {
     <div class="tab-pane" id="tab-devices">
       <div class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">Aktivne Naprave v Živo (Telemetrija Odjemalcev)</h2>
-          <input type="text" class="search-input" id="search-devices" placeholder="Išči model, IP, zaslon..." onkeyup="filterTable('search-devices', 'devices-body')">
+          <h2 class="panel-title">Pregled Naprav in Telemetrija Uporabnikov</h2>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <label style="font-size:12px; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; gap:6px;">
+              <input type="checkbox" id="filter-online-only" onchange="renderDevicesTable()"> Samo Online
+            </label>
+            <input type="text" class="search-input" id="search-devices" placeholder="Išči model, OS, IP ali ID..." oninput="renderDevicesTable()">
+          </div>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Model Naprave</th>
-              <th>Sistem</th>
-              <th>Trenuten Zaslon</th>
-              <th>IP Naslov</th>
-              <th>Povezan Od</th>
-              <th>Akcija</th>
-            </tr>
-          </thead>
-          <tbody id="devices-body">
-            <tr><td colspan="6" style="text-align:center; color: var(--text-muted);">Trenutno ni povezanih naprav v živo.</td></tr>
-          </tbody>
-        </table>
-      </div>
 
-      <div class="panel" style="margin-top: 20px;">
-        <div class="panel-header">
-          <h2 class="panel-title">Vse Zaznane & Registrirane Naprave (Apple & Android v bazi)</h2>
-          <input type="text" class="search-input" id="search-all-devices" placeholder="Išči model, sistem, zaslon..." onkeyup="filterTable('search-all-devices', 'all-devices-body')">
+        <div style="overflow-x:auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Platforma & Model</th>
+                <th>ID Naprave</th>
+                <th>App Verzija</th>
+                <th>Trenutni Zaslon v Živo</th>
+                <th>Status / Zadnja Aktivnost</th>
+                <th>IP Naslov</th>
+                <th>Akcija</th>
+              </tr>
+            </thead>
+            <tbody id="devices-tbody">
+              <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Nalaganje naprav...</td></tr>
+            </tbody>
+          </table>
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Model Naprave</th>
-              <th>Sistem & Platforma</th>
-              <th>Zadnji Zaslon</th>
-              <th>IP Naslov</th>
-              <th>Prvič Viden</th>
-              <th>Nazadnje Aktiven</th>
-              <th>Akcija</th>
-            </tr>
-          </thead>
-          <tbody id="all-devices-body">
-            <tr><td colspan="7" style="text-align:center; color: var(--text-muted);">Ni zabeleženih naprav.</td></tr>
-          </tbody>
-        </table>
       </div>
     </div>
 
@@ -1814,386 +2364,791 @@ function renderAdminDashboardHtml() {
     <div class="tab-pane" id="tab-squad">
       <div class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">Aktivne Pivske Klape (Sobe)</h2>
-          <input type="text" class="search-input" id="search-rooms" placeholder="Išči sobo ali kodo..." onkeyup="filterTable('search-rooms', 'rooms-body')">
+          <h2 class="panel-title">Aktivne Pivske Klape (Sobe & Povezani Prijatelji)</h2>
+          <input type="text" class="search-input" id="search-rooms" placeholder="Išči sobo po kodi ali imenu..." oninput="renderRoomsCards()">
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Koda</th>
-              <th>Ime Klape</th>
-              <th>Ustvarjeno</th>
-              <th>Akcije</th>
-            </tr>
-          </thead>
-          <tbody id="rooms-body">
-            <tr><td colspan="4" style="text-align:center; color: var(--text-muted);">Nalaganje sob...</td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="panel">
-        <div class="panel-header">
-          <h2 class="panel-title">Zadnja Klepet Sporočila v Živo</h2>
-          <input type="text" class="search-input" id="search-msgs" placeholder="Filtriraj sporočila..." onkeyup="filterTable('search-msgs', 'msgs-body')">
+        <div id="rooms-cards-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:14px;">
+          <!-- Kartice sob -->
         </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Čas</th>
-              <th>Soba</th>
-              <th>Pošiljatelj</th>
-              <th>Vsebina</th>
-              <th>Akcija</th>
-            </tr>
-          </thead>
-          <tbody id="msgs-body">
-            <tr><td colspan="5" style="text-align:center; color: var(--text-muted);">Nalaganje sporočil...</td></tr>
-          </tbody>
-        </table>
       </div>
     </div>
 
-    <!-- ZAVIHEK 5: KONFIGURACIJA IN ŠANK TEDNA -->
+    <!-- ZAVIHEK 5: KONFIGURACIJA & ŠANK TEDNA -->
     <div class="tab-pane" id="tab-config">
       <div class="grid-2">
+        <!-- MOTD -->
         <div class="panel">
           <div class="panel-header">
-            <h2 class="panel-title">Sporočilo Dneva (MOTD za Aplikacijo)</h2>
+            <h2 class="panel-title">Sporočilo Dneva (MOTD - Message of the Day)</h2>
           </div>
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-            To sporočilo se samodejno prikaže vsem uporabnikom, ko odprejo aplikacijo ali se povežejo.
-          </p>
           <div class="form-group">
-            <label>Besedilo Sporočila Dneva</label>
-            <textarea class="form-control" id="cfg-motd" placeholder="Npr. Dobrodošli v ŠankFinderju! Danes imajo vsi lokali v centru akcijo."></textarea>
+            <label>Besedilo Sporočila ob Zagonu</label>
+            <textarea class="form-control" id="config-motd" placeholder="Npr. Dobrodošli v posodobljeni različici ŠankFinderja!"></textarea>
           </div>
-          <button class="btn" onclick="saveMotd()">Shrani in Objavi MOTD</button>
+          <button class="btn btn-green" onclick="saveMotd()">💾 Shrani & Oddaj MOTD</button>
         </div>
 
+        <!-- Šank Tedna -->
         <div class="panel">
           <div class="panel-header">
-            <h2 class="panel-title">OSRM Diagnostika Usmerjevanja</h2>
+            <h2 class="panel-title">⭐ Nastavitev Šanka Tedna (Featured Bar)</h2>
           </div>
-          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
-            Preverite hitrost lokalnega usmerjevalnika za pešce in vožnjo po Sloveniji.
-          </p>
-          <div style="margin-bottom: 16px;">
-            <div style="font-size: 13px;">Odzivni čas: <strong id="osrm-latency" style="color: var(--green);">-</strong></div>
+          <div class="form-group">
+            <label>Ime Lokala</label>
+            <input type="text" class="form-control" id="feat-name" placeholder="Npr. Pivnica Union">
           </div>
-          <button class="btn btn-blue" onclick="testOsrm()">Testiraj OSRM Hitrost</button>
+          <div class="form-group">
+            <label>Naslov</label>
+            <input type="text" class="form-control" id="feat-address" placeholder="Npr. Celovška cesta 22, Ljubljana">
+          </div>
+          <div class="grid-2" style="gap:10px;">
+            <div class="form-group">
+              <label>Zemljepisna Širina (lat)</label>
+              <input type="text" class="form-control mono" id="feat-lat" placeholder="46.0605">
+            </div>
+            <div class="form-group">
+              <label>Zemljepisna Dolžina (lon)</label>
+              <input type="text" class="form-control mono" id="feat-lon" placeholder="14.5022">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Posebna Akcija / Opomba</label>
+            <input type="text" class="form-control" id="feat-note" placeholder="Npr. Ob naročilu piva brezplačni prigrizek!">
+          </div>
+          <button class="btn" onclick="saveFeaturedPub()">⭐ Shrani Šank Tedna</button>
         </div>
       </div>
     </div>
 
   </div>
 
-  <!-- MODALNO OKNO ZA OGLED KLEPETA SOBE -->
+  <!-- MODALNO OKNO ZA KLEPET SOBE IN ČLANE -->
   <div class="modal-overlay" id="chat-modal">
     <div class="modal">
       <div class="modal-head">
-        <h3 id="modal-room-title">Klepet Sobe</h3>
-        <button class="btn btn-red" onclick="closeChatModal()">Zapri</button>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span class="code-badge" id="modal-room-code">XXXX</span>
+          <h3 style="font-size:15px; font-weight:800;" id="modal-room-name">Ime Sobe</h3>
+        </div>
+        <button class="btn btn-red btn-sm" onclick="closeChatModal()">✕ Zapri</button>
       </div>
-      <div class="modal-body" id="modal-chat-body"></div>
-      <div class="modal-foot">
-        <input type="text" class="form-control" id="modal-admin-msg" placeholder="Napišite sporočilo kot Uprava...">
-        <button class="btn" onclick="sendAdminRoomMsg()">Pošlji</button>
+
+      <div class="modal-body">
+        <!-- LEVO: SPOROČILA -->
+        <div class="modal-chat-pane">
+          <div class="modal-messages" id="modal-messages-list">
+            <div style="text-align:center; color:var(--text-muted); font-size:12px;">Nalaganje sporočil...</div>
+          </div>
+          <div class="modal-foot">
+            <input type="text" class="form-control" id="modal-admin-msg-input" placeholder="Pošlji kot 👑 ŠankFinder Uprava..." onkeydown="if(event.key==='Enter') sendAdminMessage()">
+            <button class="btn btn-green btn-sm" onclick="sendAdminMessage()">Pošlji</button>
+          </div>
+        </div>
+
+        <!-- DESNO: ČLANI Z MOŽNOSTJO POPRAVKA PIJAČ -->
+        <div class="modal-members-pane">
+          <div style="font-size:11px; font-weight:800; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px;">
+            Člani & Števci Piva:
+          </div>
+          <div id="modal-members-list" style="display:flex; flex-direction:column; gap:6px;">
+            <!-- Člani -->
+          </div>
+
+          <div style="margin-top:auto; padding-top:10px; border-top:1px solid var(--border);">
+            <button class="btn btn-red btn-sm" style="width:100%; justify-content:center;" onclick="deleteCurrentRoom()">
+              🗑️ Zapri in izbriši sobo
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 
+  <!-- JAVASCRIPT LOGIKA NADZORNEGA CENTRA -->
   <script>
-    let activeRoomCodeForModal = null;
-    let allDataCache = null;
+    let globalData = null;
+    let currentTab = 'overview';
+    let currentModalRoom = null;
+    let refreshSeconds = 5;
+    let osrmHistory = [24, 18, 32, 28, 20, 22, 19, 25, 21, 23];
 
+    // Leaflet zemljevid
+    let radarMap = null;
+    let radarMarkersGroup = null;
+
+    function initRadarMap() {
+      if (radarMap) return;
+      const el = document.getElementById('live-radar-map');
+      if (!el) return;
+
+      radarMap = L.map('live-radar-map', {
+        zoomControl: false
+      }).setView([46.0569, 14.5058], 13); // Ljubljana
+
+      L.control.zoom({ position: 'bottomright' }).addTo(radarMap);
+
+      // CartoDB Dark Matter temna podlaga
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 19
+      }).addTo(radarMap);
+
+      radarMarkersGroup = L.layerGroup().addTo(radarMap);
+    }
+
+    function centerOnLjubljana() {
+      if (radarMap) radarMap.flyTo([46.0569, 14.5058], 13);
+    }
+
+    function fitRadarBounds() {
+      if (!radarMap || !radarMarkersGroup) return;
+      const layers = radarMarkersGroup.getLayers();
+      if (layers.length > 0) {
+        const group = L.featureGroup(layers);
+        radarMap.fitBounds(group.getBounds().pad(0.2));
+      } else {
+        centerOnLjubljana();
+      }
+    }
+
+    function updateRadarMap(members, featuredPub) {
+      initRadarMap();
+      if (!radarMap || !radarMarkersGroup) return;
+
+      radarMarkersGroup.clearLayers();
+      const points = [];
+
+      // 1. Člani aktivnih sob
+      if (Array.isArray(members)) {
+        members.forEach(m => {
+          if (typeof m.lat === 'number' && typeof m.lon === 'number' && !isNaN(m.lat) && !isNaN(m.lon)) {
+            const pos = [m.lat, m.lon];
+            points.push(pos);
+            const initial = (m.name || 'P')[0].toUpperCase();
+            const drinks = m.drinks_count || 0;
+
+            const icon = L.divIcon({
+              className: 'custom-radar-icon',
+              html: \`
+                <div class="radar-pin-wrap">
+                  <div class="radar-pulse"></div>
+                  <div class="radar-pin">
+                    <span>\${initial}</span>
+                    <div class="radar-drinks-pill">\${drinks}</div>
+                  </div>
+                </div>
+              \`,
+              iconSize: [36, 36],
+              iconAnchor: [18, 18],
+              popupAnchor: [0, -18]
+            });
+
+            const popup = \`
+              <div style="font-family:'Plus Jakarta Sans',sans-serif; color:#f8fafc; min-width:180px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <strong style="color:#f59e0b; font-size:13px;">\${escapeHtml(m.name)}</strong>
+                  <span class="code-badge">\${escapeHtml(m.room_code)}</span>
+                </div>
+                <div style="font-size:11.5px; color:#cbd5e1; margin-bottom:4px;">
+                  🍺 Popitih piv: <b style="color:#f59e0b;">\${drinks}</b>
+                </div>
+                <div style="font-size:10.5px; color:#64748b; font-family:'JetBrains Mono',monospace;">
+                  \${m.lat.toFixed(5)}, \${m.lon.toFixed(5)}
+                </div>
+              </div>
+            \`;
+
+            L.marker(pos, { icon }).bindPopup(popup).addTo(radarMarkersGroup);
+          }
+        });
+      }
+
+      // 2. Šank Tedna
+      if (featuredPub && featuredPub.lat && featuredPub.lon) {
+        const pLat = parseFloat(featuredPub.lat);
+        const pLon = parseFloat(featuredPub.lon);
+        if (!isNaN(pLat) && !isNaN(pLon)) {
+          points.push([pLat, pLon]);
+          const starIcon = L.divIcon({
+            className: 'custom-radar-icon',
+            html: \`
+              <div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center;">
+                <div style="position:absolute; width:34px; height:34px; border-radius:50%; background:rgba(16,185,129,0.3); animation:pinPulse 2s infinite;"></div>
+                <div style="width:26px; height:26px; border-radius:50%; background:#10b981; border:2px solid #fff; display:flex; align-items:center; justify-content:center; box-shadow:0 0 10px rgba(16,185,129,0.7); font-size:13px;">
+                  ⭐
+                </div>
+              </div>
+            \`,
+            iconSize: [34, 34],
+            iconAnchor: [17, 17]
+          });
+
+          const starPopup = \`
+            <div style="font-family:'Plus Jakarta Sans',sans-serif; color:#f8fafc; min-width:190px;">
+              <div style="font-size:10px; font-weight:800; color:#10b981; text-transform:uppercase;">Šank Tedna</div>
+              <div style="font-size:14px; font-weight:800; margin:2px 0;">\${escapeHtml(featuredPub.name || 'Izbrani lokal')}</div>
+              <div style="font-size:11.5px; color:#94a3b8;">\${escapeHtml(featuredPub.address || '')}</div>
+              \${featuredPub.note ? \`<div style="margin-top:6px; padding:4px 8px; background:rgba(16,185,129,0.1); border-left:3px solid #10b981; font-size:11px; color:#34d399;">\${escapeHtml(featuredPub.note)}</div>\` : ''}
+            </div>
+          \`;
+
+          L.marker([pLat, pLon], { icon: starIcon }).bindPopup(starPopup).addTo(radarMarkersGroup);
+        }
+      }
+
+      const countEl = document.getElementById('radar-live-count');
+      if (countEl) countEl.innerText = \`\${points.length} \${points.length === 1 ? 'uporabnik' : 'uporabnikov'} na zemljevidu\`;
+    }
+
+    // ZAVIHKI
     function switchTab(tabId) {
+      currentTab = tabId;
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
 
-      const targetBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick').includes(tabId));
-      if (targetBtn) targetBtn.classList.add('active');
+      const pane = document.getElementById('tab-' + tabId);
+      if (pane) pane.classList.add('active');
 
-      const targetPane = document.getElementById('tab-' + tabId);
-      if (targetPane) targetPane.classList.add('active');
+      const btn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick').includes(tabId));
+      if (btn) btn.classList.add('active');
+
+      if (tabId === 'overview') {
+        setTimeout(() => { if (radarMap) radarMap.invalidateSize(); }, 100);
+      }
     }
 
+    // PRIDOBIVANJE PODATKOV
     async function fetchData() {
       try {
+        refreshSeconds = 5;
         const res = await fetch('/api/admin/data');
-        if (!res.ok) throw new Error('Napaka pri pridobivanju podatkov: ' + res.status);
-        const data = await res.json();
-        allDataCache = data;
-
-        // 1. Posodobi statistiko na vrhu
-        document.getElementById('stat-online-devices').textContent = data.overview.onlineAppDevicesCount;
-        document.getElementById('stat-total-devices').textContent = data.overview.totalKnownDevicesCount;
-        document.getElementById('stat-push-sent').textContent = data.overview.totalPushSentCount;
-        document.getElementById('stat-rooms').textContent = data.overview.activeRoomsCount;
-        document.getElementById('stat-drinks').textContent = data.overview.totalDrinks;
-
-        // Značke na zavihkih
-        document.getElementById('badge-push').textContent = data.overview.totalPushSentCount;
-        document.getElementById('badge-devices').textContent = data.overview.onlineAppDevicesCount;
-        document.getElementById('badge-rooms').textContent = data.overview.activeRoomsCount;
-
-        // 2. Tabela naprav v živo in vseh naprav
-        renderLiveDevices(data.liveDevices);
-        renderAllDevices(data.allDevices, data.liveDevices);
-
-        // 3. Tabela zgodovine push obvestil
-        renderPushHistory(data.pushHistory);
-
-        // 4. Posodobi spustni seznam ciljnih naprav v push obrazcu
-        updateTargetDevicesDropdown(data.liveDevices, data.allDevices);
-
-        // 5. Tabela sob
-        renderRooms(data.rooms);
-
-        // 6. Tabela zadnjih sporočil
-        renderMessages(data.messages);
-
-        // 7. Nastavitve (MOTD)
-        if (data.settings && data.settings.motd) {
-          const motdEl = document.getElementById('cfg-motd');
-          if (document.activeElement !== motdEl) {
-            motdEl.value = data.settings.motd;
-          }
+        if (res.status === 401 || res.status === 429) {
+          window.location.reload();
+          return;
         }
-
+        globalData = await res.json();
+        renderOverview();
+        renderPushHistory();
+        renderDevicesTable();
+        renderRoomsCards();
+        renderConfig();
       } catch (err) {
-        console.error('Napaka pri osveževanju:', err);
+        console.error('Napaka pri osveževanju podatkov:', err);
       }
     }
 
-    function getOsBadge(os, model) {
-      const isApple = (os && os.toLowerCase().includes('ios')) || (model && (model.toLowerCase().includes('iphone') || model.toLowerCase().includes('ipad') || model.toLowerCase().includes('apple')));
-      if (isApple) {
-        return '<span class="tab-pill" style="background:rgba(0,122,255,0.18); color:#0A84FF; border:1px solid rgba(0,122,255,0.4); font-weight:700;"> Apple iOS</span>';
+    function renderOverview() {
+      if (!globalData || !globalData.overview) return;
+      const o = globalData.overview;
+
+      document.getElementById('stat-online-devices').innerText = o.onlineAppDevicesCount || 0;
+      document.getElementById('stat-ios-count').innerText = o.iosOnlineCount || 0;
+      document.getElementById('stat-android-count').innerText = o.androidOnlineCount || 0;
+      document.getElementById('stat-total-devices').innerText = o.totalKnownDevicesCount || 0;
+      document.getElementById('stat-today-devices').innerText = \`+\${o.todayNewDevicesCount || 0} danes\`;
+      document.getElementById('stat-push-sent').innerText = o.totalPushSentCount || 0;
+      document.getElementById('stat-last-push').innerText = o.lastPushSentAt ? \`Zadnje: \${formatTime(o.lastPushSentAt)}\` : 'Zadnje: /';
+      document.getElementById('stat-rooms').innerText = o.activeRoomsCount || 0;
+      document.getElementById('stat-active-members-count').innerText = o.totalMembers || 0;
+      document.getElementById('stat-drinks').innerText = o.totalDrinks || 0;
+
+      if (o.topDrinker) {
+        document.getElementById('stat-top-drinker').innerHTML = \`Top: <b style="color:var(--gold);">\${escapeHtml(o.topDrinker.name)}</b> (\${o.topDrinker.drinksCount} piv)\`;
+      } else {
+        document.getElementById('stat-top-drinker').innerText = 'Top pivec: /';
       }
-      return '<span class="tab-pill" style="background:rgba(61,220,132,0.18); color:#3DDC84; border:1px solid rgba(61,220,132,0.4); font-weight:700;">🤖 Android</span>';
+
+      // Uptime
+      const up = o.uptimeSeconds || 0;
+      const d = Math.floor(up / 86400);
+      const h = Math.floor((up % 86400) / 3600);
+      const m = Math.floor((up % 3600) / 60);
+      document.getElementById('server-uptime').innerText = \`Uptime: \${d}d \${h}h \${m}m\`;
+
+      // Telemetrija gateway in baza
+      document.getElementById('gateway-telemetry').innerHTML = \`<span style="color:var(--green); font-weight:700;">RAM: \${o.memoryRssMb || 0} MB • \${o.openWebSockets || 0} WS</span>\`;
+      
+      const dbMb = ((o.dbSizeBytes || 0) / 1024 / 1024).toFixed(2);
+      const walKb = Math.round((o.walSizeBytes || 0) / 1024);
+      document.getElementById('db-file-sizes').innerText = \`data/squad.db (\${dbMb} MB • WAL: \${walKb} KB)\`;
+
+      // Značke na zavihkih
+      document.getElementById('badge-push').innerText = o.totalPushSentCount || 0;
+      document.getElementById('badge-devices').innerText = o.onlineAppDevicesCount || 0;
+      document.getElementById('badge-rooms').innerText = o.activeRoomsCount || 0;
+
+      // Posodobi Live Radar zemljevid
+      let featuredPub = null;
+      try {
+        if (globalData.settings && globalData.settings.featured_pub) {
+          featuredPub = JSON.parse(globalData.settings.featured_pub);
+        }
+      } catch (e) {}
+
+      updateRadarMap(globalData.liveRadarMembers || [], featuredPub);
     }
 
-    function renderLiveDevices(devices) {
-      const tbody = document.getElementById('devices-body');
-      if (!devices || devices.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color: var(--text-muted);">Trenutno ni aktivno povezanih naprav v živo.</td></tr>';
+    // OSRM PING & SPARKLINE
+    async function testOsrm() {
+      const statusEl = document.getElementById('stat-osrm');
+      const tableStatusEl = document.getElementById('osrm-service-status');
+      try {
+        const res = await fetch('/api/admin/osrm/ping');
+        const data = await res.json();
+        if (data.status === 'online') {
+          const lat = data.latencyMs;
+          statusEl.innerText = \`\${lat} ms\`;
+          let col = 'var(--green)';
+          if (lat > 300) col = 'var(--red)';
+          else if (lat > 100) col = 'var(--gold)';
+          statusEl.style.color = col;
+
+          if (tableStatusEl) tableStatusEl.innerHTML = \`<span style="color:\${col}; font-weight:700;">Deluje (\${lat} ms)</span>\`;
+
+          osrmHistory.push(lat);
+          if (osrmHistory.length > 10) osrmHistory.shift();
+          renderSparkline();
+        } else {
+          statusEl.innerText = 'Nedosegljiv';
+          statusEl.style.color = 'var(--red)';
+          if (tableStatusEl) tableStatusEl.innerHTML = \`<span style="color:var(--red); font-weight:700;">Napaka</span>\`;
+        }
+      } catch (e) {
+        statusEl.innerText = 'Offline';
+        statusEl.style.color = 'var(--red)';
+      }
+    }
+
+    function renderSparkline() {
+      const wrap = document.getElementById('osrm-sparkline');
+      if (!wrap) return;
+      const max = Math.max(...osrmHistory, 50);
+      wrap.innerHTML = osrmHistory.map(ms => {
+        const pct = Math.max(15, Math.min(100, Math.round((ms / max) * 100)));
+        let bg = 'var(--green)';
+        if (ms > 300) bg = 'var(--red)';
+        else if (ms > 100) bg = 'var(--gold)';
+        return \`<div class="spark-bar" style="height:\${pct}%; background:\${bg};" title="\${ms} ms"></div>\`;
+      }).join('');
+    }
+
+    // HITRI DIAGNOSTIČNI TEST
+    async function runDiagnostics() {
+      const box = document.getElementById('diagnostics-box');
+      const det = document.getElementById('diag-details');
+      box.style.display = 'block';
+      det.innerHTML = 'Izvajam meritve odzivnosti OSRM in Geoapify strežnikov...';
+
+      try {
+        const res = await fetch('/api/admin/diagnostics');
+        const d = await res.json();
+        const diag = d.diagnostics;
+
+        det.innerHTML = \`
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+            <span>1. OSRM Slovenija (Lokalni):</span>
+            <b style="color:\${diag.osrmPrimary.status === 'online' ? 'var(--green)' : 'var(--red)'};">\${diag.osrmPrimary.latencyMs} ms (\${diag.osrmPrimary.status})</b>
+          </div>
+          <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+            <span>2. OSRM Fallback (OSM Nemčija):</span>
+            <b style="color:\${diag.osrmFallback.status === 'online' ? 'var(--green)' : 'var(--red)'};">\${diag.osrmFallback.latencyMs} ms (\${diag.osrmFallback.status})</b>
+          </div>
+          <div style="display:flex; justify-content:space-between;">
+            <span>3. Geoapify Places API:</span>
+            <b style="color:\${diag.geoapify.status === 'online' ? 'var(--green)' : 'var(--red)'};">\${diag.geoapify.latencyMs} ms (\${diag.geoapify.status})</b>
+          </div>
+        \`;
+
+        const fbStatus = document.getElementById('osrm-fallback-status');
+        if (fbStatus && diag.osrmFallback.status === 'online') {
+          fbStatus.innerHTML = \`<span style="color:var(--green); font-weight:700;">Deluje (\${diag.osrmFallback.latencyMs} ms)</span>\`;
+        }
+      } catch (err) {
+        det.innerText = 'Napaka pri izvedbi diagnostike: ' + err.message;
+      }
+    }
+
+    // PREDLOGE IN PREDOGLED
+    function applyTemplate(type) {
+      const titleInput = document.getElementById('quick-push-title');
+      const msgInput = document.getElementById('quick-push-msg');
+
+      if (type === 'happy_hour') {
+        titleInput.value = '🍻 Petkov Happy Hour v Ljubljani!';
+        msgInput.value = 'Petek je tu! Šanki se polnijo, odpri zemljevid in preveri, kje se zbira tvoja klapa!';
+      } else if (type === 'burek') {
+        titleInput.value = '🥐 Čas za Burek Pavzo?';
+        msgInput.value = 'Pivski večer se preveša v noč. Odpri orodje Burek Pavza za seznam odprtih pekarn!';
+      } else if (type === 'update') {
+        titleInput.value = '⚡ Nova posodobitev ŠankFinderja';
+        msgInput.value = 'Na voljo je sveža posodobitev aplikacije z izboljšanim radarjem in vodenjem v smeri hoje.';
+      } else if (type === 'uprava') {
+        titleInput.value = '👑 Poziv ŠankFinder Uprave';
+        msgInput.value = 'Častimo dobro voljo! Preveri nov Šank Tedna v zavihku Šanki in se pridruži zabavi!';
+      }
+      updateLivePreview();
+    }
+
+    function onTargetChange() {
+      const val = document.getElementById('quick-push-target').value;
+      const roomGroup = document.getElementById('group-room-code');
+      if (val === 'room') {
+        roomGroup.style.display = 'block';
+      } else {
+        roomGroup.style.display = 'none';
+      }
+    }
+
+    function updateLivePreview() {
+      const t = document.getElementById('quick-push-title').value.trim() || 'Naslov obvestila bo tukaj...';
+      const b = document.getElementById('quick-push-msg').value.trim() || 'Besedilo potisnega obvestila, kot ga bo videl uporabnik na telefonu.';
+      document.getElementById('preview-title').innerText = t;
+      document.getElementById('preview-body').innerText = b;
+
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, '0');
+      const mm = String(now.getMinutes()).padStart(2, '0');
+      document.getElementById('preview-clock').innerText = \`\${hh}:\${mm}\`;
+    }
+
+    // POŠILJANJE PUSH OBVESTILA
+    async function sendQuickPush(targetOverride) {
+      let target = targetOverride;
+      if (!target) {
+        const sel = document.getElementById('quick-push-target').value;
+        if (sel === 'room') {
+          const code = (document.getElementById('quick-push-room-code').value || '').trim().toUpperCase();
+          if (!code) { alert('Vnesite kodo sobe!'); return; }
+          target = \`room:\${code}\`;
+        } else {
+          target = sel;
+        }
+      }
+
+      const title = document.getElementById('quick-push-title').value.trim();
+      const message = document.getElementById('quick-push-msg').value.trim();
+      if (!message) { alert('Vnesite besedilo sporočila!'); return; }
+
+      try {
+        const res = await fetch('/api/admin/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title, message, target })
+        });
+        const d = await res.json();
+        if (d.success) {
+          alert(d.message);
+          document.getElementById('quick-push-title').value = '';
+          document.getElementById('quick-push-msg').value = '';
+          updateLivePreview();
+          fetchData();
+        } else {
+          alert('Napaka: ' + (d.error || 'Neznana napaka'));
+        }
+      } catch (err) {
+        alert('Napaka pri pošiljanju: ' + err.message);
+      }
+    }
+
+    // ZGODOVINA PUSH OBVESTIL
+    function renderPushHistory() {
+      const tbody = document.getElementById('push-history-tbody');
+      if (!globalData || !globalData.pushHistory) return;
+
+      const list = globalData.pushHistory;
+      document.getElementById('push-history-count').innerText = \`\${list.length} obvestil\`;
+
+      if (list.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-muted);">Ni še poslanih obvestil.</td></tr>';
         return;
       }
-      tbody.innerHTML = devices.map(d => \`
+
+      tbody.innerHTML = list.map(item => \`
         <tr>
-          <td><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#3DDC84; margin-right:6px; box-shadow:0 0 8px #3DDC84;"></span><strong>\${escapeHtml(d.model)}</strong> <span class="mono" style="font-size:11px; color:var(--text-muted);">(\${escapeHtml(d.deviceId)})</span></td>
-          <td>\${getOsBadge(d.osVersion, d.model)} <span class="mono" style="font-size:11px; margin-left:4px;">\${escapeHtml(d.osVersion || '')}</span></td>
-          <td><span style="color:var(--gold); font-weight:700;">\${escapeHtml(d.currentScreen || 'Glavna')}</span></td>
-          <td class="mono">\${escapeHtml(d.ip)}</td>
-          <td>\${formatTime(d.connectedAt)}</td>
+          <td class="mono">#\${item.id}</td>
           <td>
-            <button class="btn btn-blue" onclick="openTargetPush('\${escapeHtml(d.deviceId)}')">Pošlji Obvestilo</button>
+            <strong>\${escapeHtml(item.title)}</strong>
+            <div style="color:var(--text-muted); font-size:12px; margin-top:2px;">\${escapeHtml(item.message)}</div>
+          </td>
+          <td><span class="code-badge">\${escapeHtml(item.target || 'all')}</span></td>
+          <td><span style="color:var(--green); font-weight:700;">\${item.sent_count || 0} naprav</span></td>
+          <td style="color:var(--text-muted); font-size:11.5px;">\${formatTime(item.created_at)}</td>
+          <td>
+            <div style="display:flex; gap:6px;">
+              <button class="btn btn-sm btn-blue" onclick="reusePush('\${escapeJs(item.title)}', '\${escapeJs(item.message)}')">🔁</button>
+              <button class="btn btn-sm btn-red" onclick="deletePush(\${item.id})">🗑️</button>
+            </div>
           </td>
         </tr>
       \`).join('');
     }
 
-    function renderPushHistory(history) {
-      const tbody = document.getElementById('push-history-body');
-      if (!history || history.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--text-muted);">Ni preteklih obvestil.</td></tr>';
-        return;
-      }
-      tbody.innerHTML = history.map(h => \`
-        <tr>
-          <td style="white-space:nowrap;">\${formatTime(h.created_at)}</td>
-          <td><strong>\${escapeHtml(h.title)}</strong></td>
-          <td>\${escapeHtml(h.message)}</td>
-          <td><span class="tab-pill">\${h.sent_count} naprav</span></td>
-        </tr>
-      \`).join('');
+    function reusePush(title, message) {
+      switchTab('overview');
+      document.getElementById('quick-push-title').value = title;
+      document.getElementById('quick-push-msg').value = message;
+      updateLivePreview();
+      window.scrollTo({ top: 400, behavior: 'smooth' });
     }
 
-    function renderAllDevices(devices, liveDevices) {
-      const tbody = document.getElementById('all-devices-body');
-      if (!tbody) return;
-      if (!devices || devices.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color: var(--text-muted);">Ni zabeleženih naprav.</td></tr>';
+    async function deletePush(id) {
+      if (!confirm(\`Ali res želite izbrisati obvestilo #\${id} iz zgodovine?\`)) return;
+      try {
+        const res = await fetch('/api/admin/push/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id })
+        });
+        const d = await res.json();
+        if (d.success) fetchData();
+      } catch (e) {
+        alert('Napaka pri brisanju: ' + e.message);
+      }
+    }
+
+    // NAPRAVE V ŽIVO
+    function renderDevicesTable() {
+      const tbody = document.getElementById('devices-tbody');
+      if (!globalData) return;
+
+      const onlineOnly = document.getElementById('filter-online-only').checked;
+      const query = (document.getElementById('search-devices').value || '').toLowerCase();
+
+      const liveMap = new Map();
+      (globalData.liveDevices || []).forEach(d => liveMap.set(d.deviceId, d));
+
+      let devices = onlineOnly ? (globalData.liveDevices || []) : (globalData.allDevices || []);
+
+      if (query) {
+        devices = devices.filter(d => {
+          const s = \`\${d.device_id || d.deviceId || ''} \${d.model || ''} \${d.os_version || d.osVersion || ''} \${d.ip || ''} \${d.current_screen || d.currentScreen || ''}\`.toLowerCase();
+          return s.includes(query);
+        });
+      }
+
+      if (devices.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Ni naprav, ki ustrezajo kriterijem.</td></tr>';
         return;
       }
-      const liveSet = new Set((liveDevices || []).map(d => d.deviceId));
+
       tbody.innerHTML = devices.map(d => {
-        const isOnline = liveSet.has(d.device_id);
-        const statusDot = isOnline 
-          ? '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#3DDC84; margin-right:6px; box-shadow:0 0 6px #3DDC84;" title="Povezan v živo"></span>'
-          : '<span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#64748B; margin-right:6px;" title="Neaktiven"></span>';
+        const devId = d.device_id || d.deviceId;
+        const isOnline = liveMap.has(devId);
+        const liveDev = liveMap.get(devId);
+        const model = d.model || 'Neznan model';
+        const os = d.os_version || d.osVersion || 'Neznan OS';
+        const appVer = d.app_version || d.appVersion || '1.2.0';
+        const screen = (liveDev ? liveDev.currentScreen : d.current_screen) || 'Zemljevid & Šanki';
+        const ip = d.ip || 'unknown';
+        const lastSeen = d.last_seen || d.lastSeen;
+
+        const isIos = (model + ' ' + os).toLowerCase().includes('ios') || (model + ' ' + os).toLowerCase().includes('iphone');
+        const platformIcon = isIos ? '🍎' : '🤖';
+
+        let screenColor = 'var(--blue)';
+        if (screen.includes('Zemljevid') || screen.includes('Šank')) screenColor = 'var(--green)';
+        else if (screen.includes('Klapa') || screen.includes('Pivska')) screenColor = 'var(--gold)';
+        else if (screen.includes('Zgodovina')) screenColor = 'var(--purple)';
+
         return \`
           <tr>
-            <td>\${statusDot}<strong>\${escapeHtml(d.model)}</strong> <span class="mono" style="font-size:11px; color:var(--text-muted);">(\${escapeHtml(d.device_id)})</span></td>
-            <td>\${getOsBadge(d.os_version, d.model)} <span class="mono" style="font-size:11px; margin-left:4px;">\${escapeHtml(d.os_version || '')}</span></td>
-            <td><span style="color:var(--gold); font-weight:600;">\${escapeHtml(d.current_screen || 'Glavna')}</span></td>
-            <td class="mono">\${escapeHtml(d.ip)}</td>
-            <td style="font-size:12px;">\${formatTime(d.first_seen)}</td>
-            <td style="font-size:12px;"><strong>\${formatTime(d.last_seen)}</strong></td>
             <td>
-              <button class="btn btn-blue" onclick="openTargetPush('\${escapeHtml(d.device_id)}')">Obvesti</button>
+              <span style="font-size:14px; margin-right:4px;">\${platformIcon}</span>
+              <strong>\${escapeHtml(model)}</strong>
+              <div style="font-size:11px; color:var(--text-muted);">\${escapeHtml(os)}</div>
+            </td>
+            <td class="mono" style="font-size:11px;" title="\${devId}">
+              \${devId.length > 18 ? devId.substring(0, 18) + '...' : devId}
+            </td>
+            <td class="mono">v\${escapeHtml(appVer)}</td>
+            <td>
+              <span class="badge-tag" style="background:rgba(255,255,255,0.05); color:\${screenColor}; border-color:\${screenColor};">
+                \${escapeHtml(screen)}
+              </span>
+            </td>
+            <td>
+              \${isOnline ? \`
+                <span class="status-badge" style="font-size:11px; padding:2px 8px;">
+                  <span class="pulse-dot"></span> Online
+                </span>
+              \` : \`
+                <span style="color:var(--text-muted); font-size:11.5px;">\${formatTime(lastSeen)}</span>
+              \`}
+            </td>
+            <td class="mono" style="font-size:11.5px; color:var(--text-muted);">\${escapeHtml(ip)}</td>
+            <td>
+              <button class="btn btn-sm btn-blue" onclick="sendDirectPushPrompt('\${devId}')">
+                🔔 Osebni Push
+              </button>
             </td>
           </tr>
         \`;
       }).join('');
     }
 
-    function updateTargetDevicesDropdown(liveDevices, allDevices) {
-      const select = document.getElementById('push-target');
-      const currentVal = select.value;
-      let html = '<option value="">Vsi uporabniki aplikacije (Globalni broadcast)</option>';
-      
-      const devices = (allDevices && allDevices.length > 0) ? allDevices : (liveDevices || []);
-      const liveSet = new Set((liveDevices || []).map(d => d.deviceId));
-      
-      if (devices && devices.length > 0) {
-        devices.forEach(d => {
-          const devId = d.device_id || d.deviceId;
-          const model = d.model || 'Naprava';
-          const os = d.os_version || d.osVersion || '';
-          const isApple = os.toLowerCase().includes('ios') || model.toLowerCase().includes('iphone') || model.toLowerCase().includes('ipad');
-          const osPrefix = isApple ? '🍎 [Apple]' : '🤖 [Android]';
-          const isOnline = liveSet.has(devId);
-          const statusText = isOnline ? '🟢 NA SPLETU' : '⚪ Neaktiven';
-          html += \`<option value="\${escapeHtml(devId)}">\${osPrefix} \${escapeHtml(model)} (\${escapeHtml(devId)}) - \${statusText}</option>\`;
-        });
+    function sendDirectPushPrompt(devId) {
+      const msg = prompt('Vnesite vsebino sporočila za to napravo:');
+      if (msg && msg.trim()) {
+        document.getElementById('quick-push-title').value = '🔔 Osebno sporočilo Uprave';
+        document.getElementById('quick-push-msg').value = msg.trim();
+        sendQuickPush(\`device:\${devId}\`);
       }
-      select.innerHTML = html;
-      select.value = currentVal;
     }
 
-    function openTargetPush(devId) {
-      switchTab('push');
-      document.getElementById('push-target').value = devId;
-      document.getElementById('push-title').focus();
-    }
+    // PIVSKA KLAPA SOBE
+    function renderRoomsCards() {
+      const grid = document.getElementById('rooms-cards-grid');
+      if (!globalData || !globalData.rooms) return;
 
-    function renderRooms(rooms) {
-      const tbody = document.getElementById('rooms-body');
-      if (!rooms || rooms.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color: var(--text-muted);">Ni aktivnih sob.</td></tr>';
-        return;
+      const q = (document.getElementById('search-rooms').value || '').toLowerCase();
+      let rooms = globalData.rooms;
+
+      if (q) {
+        rooms = rooms.filter(r => (r.code + ' ' + (r.name || '')).toLowerCase().includes(q));
       }
-      tbody.innerHTML = rooms.map(r => \`
-        <tr>
-          <td><span class="code-badge">\${escapeHtml(r.code)}</span></td>
-          <td><strong>\${escapeHtml(r.name)}</strong></td>
-          <td>\${formatTime(r.created_at)}</td>
-          <td>
-            <button class="btn btn-blue" onclick="openChatModal('\${r.code}', '\${escapeHtml(r.name)}')">Odpri Klepet</button>
-            <button class="btn btn-red" onclick="deleteRoom('\${r.code}')">Zapri Sobo</button>
-          </td>
-        </tr>
-      \`).join('');
-    }
 
-    function renderMessages(messages) {
-      const tbody = document.getElementById('msgs-body');
-      if (!messages || messages.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; color: var(--text-muted);">Ni sporočil.</td></tr>';
-        return;
-      }
-      tbody.innerHTML = messages.map(m => \`
-        <tr>
-          <td style="white-space:nowrap;">\${formatTime(m.created_at)}</td>
-          <td><span class="code-badge">\${escapeHtml(m.room_code)}</span></td>
-          <td><strong>\${escapeHtml(m.sender_name)}</strong></td>
-          <td>\${escapeHtml(m.content)}</td>
-          <td>
-            <button class="btn btn-red" onclick="deleteMessage(\${m.id})">Izbriši</button>
-          </td>
-        </tr>
-      \`).join('');
-    }
-
-    async function sendGlobalPush() {
-      const title = document.getElementById('push-title').value.trim();
-      const message = document.getElementById('push-message').value.trim();
-      const category = document.getElementById('push-category').value;
-      const targetDeviceId = document.getElementById('push-target').value;
-
-      if (!message) {
-        alert('Vnesite vsebino obvestila!');
+      if (rooms.length === 0) {
+        grid.innerHTML = '<div style="color:var(--text-muted); grid-column:1/-1; text-align:center; padding:20px;">Ni aktivnih sob.</div>';
         return;
       }
 
+      grid.innerHTML = rooms.map(r => {
+        const membersOfRoom = (globalData.members || []).filter(m => m.room_code === r.code);
+        const roomDrinks = membersOfRoom.reduce((acc, m) => acc + (m.drinks_count || 0), 0);
+
+        return \`
+          <div class="stat-card" style="display:flex; flex-direction:column; justify-content:space-between; gap:10px;">
+            <div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <span class="code-badge" style="font-size:14px; padding:3px 8px;">\${r.code}</span>
+                <span style="font-size:11.5px; color:var(--text-muted);">\${formatTime(r.created_at)}</span>
+              </div>
+              <h3 style="font-size:16px; font-weight:800; color:var(--text);">\${escapeHtml(r.name || 'Pivska Klapa')}</h3>
+              <div style="margin-top:8px; font-size:12.5px; color:var(--text-muted); display:flex; gap:12px;">
+                <span>👥 <b>\${membersOfRoom.length}</b> članov</span>
+                <span>🍺 <b>\${roomDrinks}</b> piv</span>
+              </div>
+            </div>
+
+            <div style="display:flex; gap:8px; margin-top:10px;">
+              <button class="btn btn-sm btn-blue" style="flex:1; justify-content:center;" onclick="openChatModal('\${r.code}', '\${escapeJs(r.name)}')">
+                💬 Klepet & Člani
+              </button>
+            </div>
+          </div>
+        \`;
+      }).join('');
+    }
+
+    // MODAL ZA KLEPET IN ČLANE
+    async function openChatModal(code, name) {
+      currentModalRoom = code;
+      document.getElementById('modal-room-code').innerText = code;
+      document.getElementById('modal-room-name').innerText = name || 'Pivska Klapa';
+      document.getElementById('chat-modal').style.display = 'flex';
+      await loadRoomChat(code);
+    }
+
+    function closeChatModal() {
+      document.getElementById('chat-modal').style.display = 'none';
+      currentModalRoom = null;
+    }
+
+    async function loadRoomChat(code) {
       try {
-        const res = await fetch('/api/admin/push/send', {
+        const res = await fetch(\`/api/admin/room/messages?code=\${code}\`);
+        const d = await res.json();
+        if (d.success) {
+          renderModalMessages(d.messages);
+          renderModalMembers(d.members, code);
+        }
+      } catch (e) {
+        console.error('Napaka pri nalaganju klepeta:', e);
+      }
+    }
+
+    function renderModalMessages(msgs) {
+      const box = document.getElementById('modal-messages-list');
+      if (!msgs || msgs.length === 0) {
+        box.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px; font-size:12px;">V tej sobi še ni sporočil.</div>';
+        return;
+      }
+      box.innerHTML = msgs.map(m => \`
+        <div class="msg-bubble">
+          <div>
+            <div class="msg-sender">\${escapeHtml(m.sender_name)}</div>
+            <div class="msg-text">\${escapeHtml(m.content)}</div>
+          </div>
+          <button class="btn btn-sm btn-red" style="padding:2px 6px; font-size:10px;" onclick="deleteMessage(\${m.id})">🗑️</button>
+        </div>
+      \`).join('');
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function renderModalMembers(members, code) {
+      const box = document.getElementById('modal-members-list');
+      if (!members || members.length === 0) {
+        box.innerHTML = '<div style="color:var(--text-muted); font-size:12px;">Ni prijavljenih članov.</div>';
+        return;
+      }
+      box.innerHTML = members.map(m => \`
+        <div style="background:#131c2d; padding:8px 10px; border-radius:8px; border:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-weight:700; font-size:12.5px; color:#f8fafc;">\${escapeHtml(m.name)}</div>
+            <div style="font-size:10.5px; color:var(--text-muted); font-family:'JetBrains Mono',monospace;">
+              \${m.lat ? \`\${m.lat.toFixed(4)}, \${m.lon.toFixed(4)}\` : 'brez GPS'}
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <button class="btn btn-sm btn-red" style="padding:2px 7px;" onclick="changeDrinks('\${m.id}', '\${code}', -1)">-</button>
+            <span class="mono" style="font-weight:800; color:var(--gold); font-size:13px; min-width:18px; text-align:center;">\${m.drinks_count || 0}</span>
+            <button class="btn btn-sm btn-green" style="padding:2px 7px;" onclick="changeDrinks('\${m.id}', '\${code}', 1)">+</button>
+          </div>
+        </div>
+      \`).join('');
+    }
+
+    async function changeDrinks(memberId, roomCode, delta) {
+      try {
+        const res = await fetch('/api/admin/member/drinks', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, message, category, targetDeviceId })
+          body: JSON.stringify({ memberId, roomCode, delta })
         });
         const d = await res.json();
         if (d.success) {
-          alert('Uspešno: ' + d.message);
-          document.getElementById('push-message').value = '';
+          loadRoomChat(roomCode);
           fetchData();
-        } else {
-          alert('Napaka: ' + d.error);
+        }
+      } catch (e) {
+        alert('Napaka: ' + e.message);
+      }
+    }
+
+    async function sendAdminMessage() {
+      const input = document.getElementById('modal-admin-msg-input');
+      const content = input.value.trim();
+      if (!content || !currentModalRoom) return;
+
+      try {
+        const res = await fetch('/api/admin/message/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code: currentModalRoom, content })
+        });
+        const d = await res.json();
+        if (d.success) {
+          input.value = '';
+          loadRoomChat(currentModalRoom);
         }
       } catch (e) {
         alert('Napaka pri pošiljanju: ' + e.message);
       }
     }
 
-    async function sendQuickPush() {
-      const title = document.getElementById('quick-push-title').value.trim() || 'ŠankFinder Obvestilo';
-      const message = document.getElementById('quick-push-msg').value.trim();
-      if (!message) {
-        alert('Vnesite vsebino sporočila!');
-        return;
-      }
-      try {
-        const res = await fetch('/api/admin/push/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title, message, category: 'splosno', targetDeviceId: '' })
-        });
-        const d = await res.json();
-        if (d.success) {
-          alert('Potisno obvestilo poslano vsem uporabnikom!');
-          document.getElementById('quick-push-msg').value = '';
-          fetchData();
-        }
-      } catch (e) {
-        alert('Napaka: ' + e.message);
-      }
-    }
-
-    async function saveMotd() {
-      const motd = document.getElementById('cfg-motd').value.trim();
-      try {
-        const res = await fetch('/api/admin/settings/update', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ motd })
-        });
-        const d = await res.json();
-        if (d.success) alert('Sporočilo dneva (MOTD) je bilo shranjeno in oddano!');
-      } catch (e) {
-        alert('Napaka: ' + e.message);
-      }
-    }
-
-    async function testOsrm() {
-      document.getElementById('osrm-latency').textContent = 'Testiram...';
-      try {
-        const res = await fetch('/api/admin/osrm/ping');
-        const d = await res.json();
-        if (d.status === 'online') {
-          document.getElementById('osrm-latency').textContent = d.latencyMs + ' ms (Odziven)';
-          document.getElementById('stat-osrm').textContent = d.latencyMs + ' ms';
-        } else {
-          document.getElementById('osrm-latency').textContent = 'Nedosegljiv (' + (d.error || 'napaka') + ')';
-        }
-      } catch (e) {
-        document.getElementById('osrm-latency').textContent = 'Napaka: ' + e.message;
-      }
-    }
-
     async function deleteMessage(id) {
-      if (!confirm('Ali res želite takoj izbrisati to sporočilo iz baze in vseh telefonov?')) return;
+      if (!confirm('Ali res želite izbrisati to sporočilo?')) return;
       try {
         const res = await fetch('/api/admin/message/delete', {
           method: 'POST',
@@ -2201,96 +3156,105 @@ function renderAdminDashboardHtml() {
           body: JSON.stringify({ id })
         });
         const d = await res.json();
-        if (d.success) {
-          fetchData();
-          if (activeRoomCodeForModal) loadRoomChat(activeRoomCodeForModal);
+        if (d.success && currentModalRoom) {
+          loadRoomChat(currentModalRoom);
         }
-      } catch (e) {
-        alert('Napaka pri brisanju: ' + e.message);
-      }
-    }
-
-    async function deleteRoom(code) {
-      if (!confirm('Ali res želite zapreti in izbrisati celotno klapa sobo ' + code + '?')) return;
-      try {
-        const res = await fetch('/api/admin/room/delete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code })
-        });
-        const d = await res.json();
-        if (d.success) fetchData();
       } catch (e) {
         alert('Napaka: ' + e.message);
       }
     }
 
-    async function openChatModal(code, name) {
-      activeRoomCodeForModal = code;
-      document.getElementById('modal-room-title').textContent = 'Klepet Sobe: ' + name + ' (' + code + ')';
-      document.getElementById('chat-modal').style.display = 'flex';
-      await loadRoomChat(code);
-    }
+    async function deleteCurrentRoom() {
+      if (!currentModalRoom) return;
+      if (!confirm(\`Ali res želite zapreti in trajno izbrisati sobo \${currentModalRoom}?\`)) return;
 
-    function closeChatModal() {
-      document.getElementById('chat-modal').style.display = 'none';
-      activeRoomCodeForModal = null;
-    }
-
-    async function loadRoomChat(code) {
       try {
-        const res = await fetch('/api/admin/room/messages?code=' + code);
-        const data = await res.json();
-        const box = document.getElementById('modal-chat-body');
-        if (!data.messages || data.messages.length === 0) {
-          box.innerHTML = '<div style="text-align:center; color:var(--text-muted); padding:20px;">V tej sobi še ni sporočil.</div>';
-          return;
-        }
-        box.innerHTML = data.messages.map(m => \`
-          <div class="msg-bubble">
-            <div>
-              <div class="msg-sender">\${escapeHtml(m.sender_name)} <span style="color:var(--text-muted); font-weight:normal; font-size:10px;">\${formatTime(m.created_at)}</span></div>
-              <div class="msg-text">\${escapeHtml(m.content)}</div>
-            </div>
-            <button class="btn btn-red" style="padding:3px 7px; font-size:11px;" onclick="deleteMessage(\${m.id})">Briši</button>
-          </div>
-        \`).join('');
-        box.scrollTop = box.scrollHeight;
-      } catch (e) {}
-    }
-
-    async function sendAdminRoomMsg() {
-      if (!activeRoomCodeForModal) return;
-      const inp = document.getElementById('modal-admin-msg');
-      const content = inp.value.trim();
-      if (!content) return;
-      try {
-        const res = await fetch('/api/admin/message/send', {
+        const res = await fetch('/api/admin/room/delete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code: activeRoomCodeForModal, content })
+          body: JSON.stringify({ code: currentModalRoom })
         });
-        inp.value = '';
-        await loadRoomChat(activeRoomCodeForModal);
-      } catch (e) {}
-    }
-
-    function filterTable(inputId, bodyId) {
-      const q = document.getElementById(inputId).value.toLowerCase();
-      const rows = document.getElementById(bodyId).getElementsByTagName('tr');
-      for (const row of rows) {
-        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+        const d = await res.json();
+        if (d.success) {
+          closeChatModal();
+          fetchData();
+        }
+      } catch (e) {
+        alert('Napaka: ' + e.message);
       }
     }
 
-    function formatTime(iso) {
-      if (!iso) return '-';
-      try {
-        const d = new Date(iso);
-        return d.toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      } catch (e) { return iso; }
+    // KONFIGURACIJA
+    function renderConfig() {
+      if (!globalData || !globalData.settings) return;
+      const s = globalData.settings;
+      if (s.motd !== undefined) document.getElementById('config-motd').value = s.motd;
+
+      if (s.featured_pub) {
+        try {
+          const f = JSON.parse(s.featured_pub);
+          document.getElementById('feat-name').value = f.name || '';
+          document.getElementById('feat-address').value = f.address || '';
+          document.getElementById('feat-lat').value = f.lat || '';
+          document.getElementById('feat-lon').value = f.lon || '';
+          document.getElementById('feat-note').value = f.note || '';
+        } catch (e) {}
+      }
     }
 
+    async function saveMotd() {
+      const motd = document.getElementById('config-motd').value.trim();
+      try {
+        const res = await fetch('/api/admin/settings/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ motd })
+        });
+        const d = await res.json();
+        if (d.success) alert('Sporočilo dneva shranjeno in oddano!');
+      } catch (e) {
+        alert('Napaka: ' + e.message);
+      }
+    }
+
+    async function saveFeaturedPub() {
+      const featuredPub = {
+        name: document.getElementById('feat-name').value.trim(),
+        address: document.getElementById('feat-address').value.trim(),
+        lat: document.getElementById('feat-lat').value.trim(),
+        lon: document.getElementById('feat-lon').value.trim(),
+        note: document.getElementById('feat-note').value.trim()
+      };
+      try {
+        const res = await fetch('/api/admin/settings/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ featuredPub })
+        });
+        const d = await res.json();
+        if (d.success) {
+          alert('Šank Tedna uspešno posodobljen!');
+          fetchData();
+        }
+      } catch (e) {
+        alert('Napaka: ' + e.message);
+      }
+    }
+
+    // ČIŠČENJE SOB
+    async function cleanOldRooms() {
+      if (!confirm('Ali želite trajno izbrisati vse sobe in sporočila, starejša od 24 ur?')) return;
+      try {
+        const res = await fetch('/api/admin/db/clean', { method: 'POST' });
+        const d = await res.json();
+        alert(d.message || 'Čiščenje zaključeno.');
+        fetchData();
+      } catch (e) {
+        alert('Napaka: ' + e.message);
+      }
+    }
+
+    // POMOŽNE FUNKCIJE
     function escapeHtml(str) {
       if (!str) return '';
       return String(str)
@@ -2300,10 +3264,38 @@ function renderAdminDashboardHtml() {
         .replace(/"/g, '&quot;');
     }
 
-    // Začetni zagon in interval osveževanja vsakih 5 sekund
+    function escapeJs(str) {
+      if (!str) return '';
+      return String(str).replace(/'/g, "\\\\'").replace(/"/g, '\\"');
+    }
+
+    function formatTime(isoStr) {
+      if (!isoStr) return '';
+      try {
+        const d = new Date(isoStr);
+        return d.toLocaleTimeString('sl-SI', { hour: '2-digit', minute: '2-digit' }) + ' (' + d.toLocaleDateString('sl-SI', { day: '2-digit', month: '2-digit' }) + ')';
+      } catch (e) {
+        return isoStr;
+      }
+    }
+
+    // ODŠTEVALNIK OSVEŽEVANJA
+    setInterval(() => {
+      refreshSeconds--;
+      if (refreshSeconds <= 0) {
+        fetchData();
+      } else {
+        const cd = document.getElementById('refresh-countdown');
+        if (cd) cd.innerText = \`\${refreshSeconds}s\`;
+      }
+    }, 1000);
+
+    // ZAČETNI ZAGON
     fetchData();
     testOsrm();
-    setInterval(fetchData, 5000);
+    setInterval(testOsrm, 15000);
+    renderSparkline();
+    updateLivePreview();
   </script>
 </body>
 </html>`;

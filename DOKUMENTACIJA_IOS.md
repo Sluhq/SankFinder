@@ -4,7 +4,8 @@
 > **Glavni jezik:** Swift 5.9+  
 > **UI ogrodje:** SwiftUI + UIKit (MapKit integracija prek `UIViewRepresentable`)  
 > **Ciljna platforma:** iOS 16.0+, watchOS 9.0+  
-> **Zadnja posodobitev:** Oktober 2026
+> **Zadnja posodobitev:** Oktober 2026  
+> 🖥️ **Strežniški del (Gateway & Caddy):** Celovita dokumentacija strežnika se nahaja v [DOKUMENTACIJA_SERVER.md](file:///c:/Android/SankFinder/DOKUMENTACIJA_SERVER.md)
 
 ---
 

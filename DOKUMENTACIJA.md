@@ -1,11 +1,12 @@
-﻿# 🍻 ŠankFinder - Celovita Programerska Dokumentacija & Arhitektura
+# 🍻 ŠankFinder - Celovita Programerska Dokumentacija & Arhitektura
 
 > **Različica aplikacije:** 1.2.0 (Build 37)  
 > **Glavni jezik:** Kotlin 1.9+  
 > **UI ogrodje:** Jetpack Compose (Material 3)  
 > **Ciljna platforma:** Android (minSdk 26, targetSdk 34)  
 > **Zadnja posodobitev:** Oktober 2026  
-> 🍎 **iOS Različica:** Celovita dokumentacija za Apple iOS se nahaja v [DOKUMENTACIJA_IOS.md](file:///c:/Android/SankFinder/DOKUMENTACIJA_IOS.md)
+> 🍎 **iOS Različica:** Celovita dokumentacija za Apple iOS se nahaja v [DOKUMENTACIJA_IOS.md](file:///c:/Android/SankFinder/DOKUMENTACIJA_IOS.md)  
+> 🖥️ **Strežniški del (Gateway & Caddy):** Celovita dokumentacija strežnika se nahaja v [DOKUMENTACIJA_SERVER.md](file:///c:/Android/SankFinder/DOKUMENTACIJA_SERVER.md)
 
 ---
 
