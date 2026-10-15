@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.SportsBar
+import androidx.compose.material.icons.filled.LocalCafe
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -619,9 +621,11 @@ fun ReceiptScannerDialog(
                                                 modifier = Modifier.weight(1f, fill = false),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                Text(
-                                                    text = if (drink.isAlcoholic) "🍺" else "☕",
-                                                    fontSize = 13.sp
+                                                Icon(
+                                                    imageVector = if (drink.isAlcoholic) androidx.compose.material.icons.Icons.Default.SportsBar else androidx.compose.material.icons.Icons.Default.LocalCafe,
+                                                    contentDescription = null,
+                                                    tint = BeerGold,
+                                                    modifier = Modifier.size(14.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Text(

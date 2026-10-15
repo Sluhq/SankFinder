@@ -506,7 +506,7 @@ struct ReceiptThermalModalView: View {
                             VStack(spacing: 2) {
                                 Text("ZOI: \(abs(record.barName.hashValue).description.prefix(16))")
                                 Text("EOR: \(abs(record.id.hashValue).description.prefix(20))")
-                                Text("Preverjeno preko FURS davčne blagajne ✓")
+                                Text("Preverjeno preko FURS davčne blagajne")
                                     .fontWeight(.bold)
                                     .padding(.top, 2)
                             }
@@ -912,7 +912,7 @@ struct CameraReceiptScannerModalView: View {
         let furs = parseFursQrCode(payload)
         if furs.isValid {
             self.isQrVerified = true
-            self.scanStatus = "✓ Davčna QR koda potrjena (FURS)!"
+            self.scanStatus = "Davčna QR koda potrjena (FURS)!"
             if let amt = furs.amount, amt > 0.0 {
                 self.detectedAmount = String(format: "%.2f", amt)
             }
@@ -1094,7 +1094,7 @@ struct CameraReceiptScannerModalView: View {
                 self.detectedDrinks = foundDrinks
                 self.detectedDrinksCount = max(1, totalQty)
                 self.detectedNote = note
-                self.scanStatus = "✓ Uspešno prepoznane pijače (\(foundDrinks.count))!"
+                self.scanStatus = "Uspešno prepoznane pijače (\(foundDrinks.count))!"
             }
             if totalAmt > 0.0 {
                 self.detectedAmount = String(format: "%.2f", totalAmt)

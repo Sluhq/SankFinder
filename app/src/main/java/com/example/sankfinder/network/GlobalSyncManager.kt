@@ -33,6 +33,14 @@ data class PushNotificationEvent(
     val timestamp: Long = System.currentTimeMillis()
 )
 
+data class FeaturedPubInfo(
+    val name: String,
+    val address: String,
+    val lat: Double?,
+    val lon: Double?,
+    val note: String
+)
+
 /**
  * GlobalSyncManager vzdržuje trajno, varovano povezavo celotne aplikacije ŠankFinder
  * z osrednjo upravno ploščo. Omogoča:
@@ -58,6 +66,9 @@ object GlobalSyncManager {
     private val _motd = MutableStateFlow<String?>(null)
     val motd: StateFlow<String?> = _motd.asStateFlow()
 
+    private val _featuredPub = MutableStateFlow<FeaturedPubInfo?>(null)
+    val featuredPub: StateFlow<FeaturedPubInfo?> = _featuredPub.asStateFlow()
+
     fun init(context: Context) {
         if (isStarted) return
         isStarted = true
@@ -72,7 +83,44 @@ object GlobalSyncManager {
 
         SankNotificationHelper.createGlobalAnnouncementChannel(context)
 
+        fetchInitialConfig()
         startSyncLoop()
+    }
+
+    private fun fetchInitialConfig() {
+        scope.launch {
+            for (hostInfo in hosts) {
+                try {
+                    val scheme = if (hostInfo.second) "https" else "http"
+                    val url = "$scheme://${hostInfo.first}/api/app/config"
+                    val request = Request.Builder().url(url).build()
+                    val response = NetworkClient.okHttpClient.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val body = response.body()?.string() ?: ""
+                        val json = JSONObject(body)
+                        if (json.optBoolean("success", false)) {
+                            val msg = json.optString("motd", "")
+                            if (msg.isNotBlank()) _motd.value = msg
+                            val pubObj = json.optJSONObject("featuredPub")
+                            if (pubObj != null) {
+                                val latVal = pubObj.optString("lat").toDoubleOrNull()
+                                val lonVal = pubObj.optString("lon").toDoubleOrNull()
+                                _featuredPub.value = FeaturedPubInfo(
+                                    name = pubObj.optString("name", "Šank Tedna"),
+                                    address = pubObj.optString("address", ""),
+                                    lat = latVal,
+                                    lon = lonVal,
+                                    note = pubObj.optString("note", "")
+                                )
+                            }
+                            break
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Neuspešen klic na /api/app/config (${hostInfo.first}): ${e.message}")
+                }
+            }
+        }
     }
 
     fun reportScreen(screen: String) {
@@ -178,6 +226,23 @@ object GlobalSyncManager {
                 "motd" -> {
                     val msg = json.optString("message", "")
                     _motd.value = if (msg.isBlank()) null else msg
+                }
+
+                "featured_pub" -> {
+                    val pubObj = json.optJSONObject("pub")
+                    if (pubObj != null) {
+                        val latVal = pubObj.optString("lat").toDoubleOrNull()
+                        val lonVal = pubObj.optString("lon").toDoubleOrNull()
+                        _featuredPub.value = FeaturedPubInfo(
+                            name = pubObj.optString("name", "Šank Tedna"),
+                            address = pubObj.optString("address", ""),
+                            lat = latVal,
+                            lon = lonVal,
+                            note = pubObj.optString("note", "")
+                        )
+                    } else {
+                        _featuredPub.value = null
+                    }
                 }
             }
         } catch (e: Exception) {

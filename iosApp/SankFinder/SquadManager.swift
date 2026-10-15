@@ -232,7 +232,7 @@ class SquadManager: ObservableObject {
         let scheme = hostInfo.useSsl ? "wss" : "ws"
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
         let signature = SecureStorage.shared.generateSignature(timestamp: timestamp, deviceId: myUserId)
-        let urlString = "\(scheme)://\(hostInfo.host)/ws?code=\(code)&name=\(encName)&userId=\(myUserId)&t=\(timestamp)&sig=\(signature)"
+        let urlString = "\(scheme)://\(hostInfo.host)/ws?code=\(code)&name=\(encName)&userId=\(myUserId)&deviceId=\(myUserId)&t=\(timestamp)&sig=\(signature)"
         guard let url = URL(string: urlString) else { return }
         
         var request = URLRequest(url: url)

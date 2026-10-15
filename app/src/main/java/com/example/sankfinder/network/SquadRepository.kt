@@ -222,7 +222,7 @@ class SquadRepository {
             val scheme = if (config.useSsl) "wss" else "ws"
             val timestamp = System.currentTimeMillis()
             val signature = com.example.sankfinder.security.CryptoHelper.generateSignature(timestamp, userId)
-            val fullUrl = "$scheme://${config.host}/ws?code=${roomCode.trim().uppercase()}&name=${java.net.URLEncoder.encode(userName, "UTF-8")}&userId=$userId&t=$timestamp&sig=$signature"
+            val fullUrl = "$scheme://${config.host}/ws?code=${roomCode.trim().uppercase()}&name=${java.net.URLEncoder.encode(userName, "UTF-8")}&userId=$userId&deviceId=$userId&t=$timestamp&sig=$signature"
             val request = Request.Builder()
                 .url(fullUrl)
                 .header("X-Sank-Timestamp", timestamp.toString())

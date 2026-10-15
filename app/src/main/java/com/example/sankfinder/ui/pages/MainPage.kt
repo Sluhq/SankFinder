@@ -534,7 +534,7 @@ fun LokalCard(
                             .padding(horizontal = 8.dp, vertical = 4.dp)
                     ) {
                         Text(
-                            text = "✓ Obiskano",
+                            text = "Obiskano",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 color = DrajvGreen,
                                 fontWeight = FontWeight.Bold

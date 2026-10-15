@@ -123,7 +123,21 @@ class SquadViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = false
             result.onSuccess { (room, memberList, msgList) ->
                 _activeRoom.value = room
-                _members.value = memberList
+                val mutableMembers = memberList.toMutableList()
+                if (mutableMembers.none { it.id == myUserId }) {
+                    mutableMembers.add(
+                        SquadMember(
+                            id = myUserId,
+                            roomCode = room.code,
+                            name = _myUserName.value,
+                            lat = null,
+                            lon = null,
+                            drinksCount = 0,
+                            lastSeen = null
+                        )
+                    )
+                }
+                _members.value = mutableMembers
                 _messages.value = msgList
                 startWebSocketConnection(room.code)
             }.onFailure { err ->
@@ -224,11 +238,37 @@ class SquadViewModel(application: Application) : AndroidViewModel(application) {
                     val name = json.optString("name")
                     val count = json.optInt("drinksCount", 0)
 
-                    _members.value = _members.value.map { m ->
-                        if (m.id == uid) m.copy(drinksCount = count) else m
+                    val current = _members.value.toMutableList()
+                    val idx = current.indexOfFirst { it.id == uid }
+                    if (idx != -1) {
+                        current[idx] = current[idx].copy(drinksCount = count)
+                    } else if (uid.isNotBlank()) {
+                        current.add(
+                            SquadMember(
+                                id = uid,
+                                roomCode = _activeRoom.value?.code ?: "",
+                                name = name.ifBlank { "Član" },
+                                lat = null,
+                                lon = null,
+                                drinksCount = count,
+                                lastSeen = null
+                            )
+                        )
                     }
+                    _members.value = current
                     if (uid != myUserId) {
                         _bannerAlert.value = "$name ima zdaj $count pijač."
+                    }
+                }
+
+                "room_joined_ack" -> {
+                    val uid = json.optString("userId")
+                    val count = json.optInt("drinksCount", 0)
+                    val current = _members.value.toMutableList()
+                    val idx = current.indexOfFirst { it.id == uid }
+                    if (idx != -1) {
+                        current[idx] = current[idx].copy(drinksCount = count)
+                        _members.value = current
                     }
                 }
 
@@ -285,21 +325,37 @@ class SquadViewModel(application: Application) : AndroidViewModel(application) {
      * Posodobi število pijač (+1 ali -1).
      */
     fun incrementDrinks() {
-        val myCurrent = _members.value.find { it.id == myUserId }?.drinksCount ?: 0
-        val newCount = myCurrent + 1
-        _members.value = _members.value.map { m ->
-            if (m.id == myUserId) m.copy(drinksCount = newCount) else m
+        val current = _members.value.toMutableList()
+        val idx = current.indexOfFirst { it.id == myUserId }
+        val newCount: Int
+        if (idx != -1) {
+            newCount = current[idx].drinksCount + 1
+            current[idx] = current[idx].copy(drinksCount = newCount)
+        } else {
+            newCount = 1
+            current.add(
+                SquadMember(
+                    id = myUserId,
+                    roomCode = _activeRoom.value?.code ?: "",
+                    name = _myUserName.value,
+                    lat = lastSentLat,
+                    lon = lastSentLon,
+                    drinksCount = newCount,
+                    lastSeen = null
+                )
+            )
         }
+        _members.value = current
         repository.sendDrinkUpdate(1)
     }
 
     fun decrementDrinks() {
-        val myCurrent = _members.value.find { it.id == myUserId }?.drinksCount ?: 0
-        if (myCurrent > 0) {
-            val newCount = myCurrent - 1
-            _members.value = _members.value.map { m ->
-                if (m.id == myUserId) m.copy(drinksCount = newCount) else m
-            }
+        val current = _members.value.toMutableList()
+        val idx = current.indexOfFirst { it.id == myUserId }
+        if (idx != -1 && current[idx].drinksCount > 0) {
+            val newCount = current[idx].drinksCount - 1
+            current[idx] = current[idx].copy(drinksCount = newCount)
+            _members.value = current
             repository.sendDrinkUpdate(-1)
         }
     }

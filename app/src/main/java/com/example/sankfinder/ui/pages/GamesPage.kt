@@ -247,7 +247,7 @@ fun GamesPage(
                 }
             }
 
-            // KARTICA 0: 🍻 PIVSKA KLAPA (Live Chat & Radar prijateljev)
+            // KARTICA 0: PIVSKA KLAPA (Live Chat & Radar prijateljev)
             item {
                 val activeSquadRoom by squadViewModel.activeRoom.collectAsState()
                 val squadMembers by squadViewModel.members.collectAsState()
@@ -334,7 +334,7 @@ fun GamesPage(
                 }
             }
 
-            // KARTICA 1: 🎲 NAKLJUČNI ŠANK (Pivska ruleta)
+            // KARTICA 1: NAKLJUČNI ŠANK (Pivska ruleta)
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -455,7 +455,7 @@ fun GamesPage(
                 }
             }
 
-            // KARTICA 2: 🥐 BUREK PAVZA (Nočna lakota)
+            // KARTICA 2: BUREK PAVZA (Nočna lakota)
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -690,7 +690,7 @@ fun GamesPage(
                 }
             }
 
-            // KARTICA 3: 🎡 KDO PLAČA RUNDO? (Kolo sreče)
+            // KARTICA 3: KDO PLAČA RUNDO? (Kolo sreče)
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -902,7 +902,7 @@ fun GamesPage(
                 }
             }
 
-            // KARTICA 4: 💶 RAZDELI RAČUN (Kdo je koliko dolžen?)
+            // KARTICA 4: RAZDELI RAČUN (Kdo je koliko dolžen?)
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -1018,7 +1018,7 @@ fun GamesPage(
                 }
             }
 
-            // KARTICA 5: 🚕 GUMB "KONČAL SEM / POKLIČI TAKSI" S 5-STOPANJSKIM PREGOVARJANJEM
+            // KARTICA 5: GUMB "KONČAL SEM / POKLIČI TAKSI" S 5-STOPANJSKIM PREGOVARJANJEM
             item {
                 Card(
                     modifier = Modifier

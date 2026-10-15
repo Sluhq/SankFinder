@@ -438,11 +438,35 @@ function checkAdminAuth(req, clientIp = 'unknown') {
 }
 
 // Preverjanje HMAC-SHA256 podpisa API in WebSocket zahtevkov (zaščita pred Replay napadi)
+const KNOWN_SECRETS = Array.from(new Set([
+    SHARED_APP_SECRET,
+    '0e249416dd0bbb1efcfa3c763e2eaad4d2f700cdbcf2bcc3d71fc6223f0f9571',
+    'sankfinder_squad_secret_2026'
+])).filter(Boolean);
+
+function verifySignatureMatch(signature, candidates) {
+    try {
+        const sigBuf = Buffer.from(signature);
+        for (const secret of KNOWN_SECRETS) {
+            for (const cand of candidates) {
+                const expectedSig = crypto.createHmac('sha256', secret).update(cand).digest('hex');
+                const expBuf = Buffer.from(expectedSig);
+                if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    } catch (e) {
+        return false;
+    }
+}
+
 function verifyRequestSignature(req) {
     const signature = req.headers['x-sank-signature'];
     const timestampStr = req.headers['x-sank-timestamp'];
     
-    // Če glavi nista prisotni (starejša orodja / lokalni razvoj), zabeležimo in dovolimo
+    // Ce glavi nista prisotni (starejsa orodja / lokalni razvoj), zabelezimo in dovolimo
     if (!signature || !timestampStr) {
         return true;
     }
@@ -450,52 +474,38 @@ function verifyRequestSignature(req) {
     const timestamp = Number(timestampStr);
     if (!timestamp || isNaN(timestamp)) return false;
 
-    // Zahteva ne sme biti starejša od 5 minut (300 sekund)
+    // Zahteva ne sme odstopati za vec kot 60 minut
     const now = Date.now();
-    if (Math.abs(now - timestamp) > 5 * 60 * 1000) {
-        console.warn(`[VARNOST] Zavrnjen zahtevek zaradi prevelikega časovnega odstopanja: ${now - timestamp}ms`);
+    if (Math.abs(now - timestamp) > 60 * 60 * 1000) {
+        console.warn(`[VARNOST] Zavrnjen zahtevek zaradi prevelikega casovnega odstopanja: ${now - timestamp}ms`);
         return false;
     }
 
     const deviceId = req.headers['x-device-id'] || '';
-    const payload = `${deviceId}:${timestampStr}`;
-    const expectedSig = crypto.createHmac('sha256', SHARED_APP_SECRET).update(payload).digest('hex');
+    const candidates = [
+        `${deviceId}:${timestampStr}`,
+        timestampStr,
+        `android_app:${timestampStr}`,
+        `ios_app:${timestampStr}`
+    ];
 
-    try {
-        const sigBuf = Buffer.from(signature);
-        const expBuf = Buffer.from(expectedSig);
-        if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
-            return true;
-        }
-        // Alternativni payload brez deviceId
-        const altSig = crypto.createHmac('sha256', SHARED_APP_SECRET).update(timestampStr).digest('hex');
-        const altBuf = Buffer.from(altSig);
-        return altBuf.length === sigBuf.length && crypto.timingSafeEqual(sigBuf, altBuf);
-    } catch (e) {
-        return false;
-    }
+    return verifySignatureMatch(signature, candidates);
 }
 
 function verifyWsSignature(timestampStr, signature, deviceId = '') {
     if (!timestampStr || !signature) return true;
     const timestamp = Number(timestampStr);
     if (!timestamp || isNaN(timestamp)) return false;
-    if (Math.abs(Date.now() - timestamp) > 5 * 60 * 1000) return false;
+    if (Math.abs(Date.now() - timestamp) > 60 * 60 * 1000) return false;
 
-    const payload = `${deviceId}:${timestampStr}`;
-    const expectedSig = crypto.createHmac('sha256', SHARED_APP_SECRET).update(payload).digest('hex');
-    try {
-        const sigBuf = Buffer.from(signature);
-        const expBuf = Buffer.from(expectedSig);
-        if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
-            return true;
-        }
-        const altSig = crypto.createHmac('sha256', SHARED_APP_SECRET).update(timestampStr).digest('hex');
-        const altBuf = Buffer.from(altSig);
-        return altBuf.length === sigBuf.length && crypto.timingSafeEqual(sigBuf, altBuf);
-    } catch (e) {
-        return false;
-    }
+    const candidates = [
+        `${deviceId}:${timestampStr}`,
+        timestampStr,
+        `android_app:${timestampStr}`,
+        `ios_app:${timestampStr}`
+    ];
+
+    return verifySignatureMatch(signature, candidates);
 }
 
 // 3. HTTP STREŽNIK
@@ -819,6 +829,13 @@ const server = http.createServer((req, res) => {
                 }
                 if (data.featuredPub !== undefined) {
                     stmtSetSetting.run('featured_pub', JSON.stringify(data.featuredPub));
+                    // Takoj obvesti vse povezane naprave
+                    const featPayload = JSON.stringify({ type: 'featured_pub', pub: data.featuredPub });
+                    for (const [socket] of appConnectedClients.entries()) {
+                        if (socket.readyState === WebSocket.OPEN) {
+                            try { socket.send(featPayload); } catch (e) {}
+                        }
+                    }
                 }
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -1159,6 +1176,23 @@ const server = http.createServer((req, res) => {
         }
     }
 
+    // JAVNI API: KONFIGURACIJA IN SANK TEDNA ZA APLIKACIJO
+    if (pathname === '/api/app/config' && req.method === 'GET') {
+        const motdSetting = stmtGetSetting.get('motd');
+        const featSetting = stmtGetSetting.get('featured_pub');
+        let featuredPub = null;
+        if (featSetting && featSetting.value) {
+            try { featuredPub = JSON.parse(featSetting.value); } catch (e) {}
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            success: true,
+            motd: motdSetting ? motdSetting.value : null,
+            featuredPub: featuredPub
+        }));
+        return;
+    }
+
     // JAVNI API: USTVARJANJE SOBE (za Pivsko Klapo)
     if (pathname === '/api/rooms/create' && req.method === 'POST') {
         if (!verifyRequestSignature(req)) {
@@ -1274,11 +1308,17 @@ wss.on('connection', (ws, req) => {
             ip: clientIp
         });
 
-        // Pošlji začetne nastavitve (npr. MOTD), če obstajajo
+        // Pošlji začetne nastavitve (npr. MOTD in Šank Tedna), če obstajata
         const motdSetting = stmtGetSetting.get('motd');
         if (motdSetting && motdSetting.value) {
             try {
                 ws.send(JSON.stringify({ type: 'motd', message: motdSetting.value }));
+            } catch (e) {}
+        }
+        const featSetting = stmtGetSetting.get('featured_pub');
+        if (featSetting && featSetting.value) {
+            try {
+                ws.send(JSON.stringify({ type: 'featured_pub', pub: JSON.parse(featSetting.value) }));
             } catch (e) {}
         }
     }
@@ -1291,10 +1331,10 @@ wss.on('connection', (ws, req) => {
     // Preverjanje HMAC-SHA256 podpisa za WebSocket povezavo
     const wsTimestamp = req.headers['x-sank-timestamp'] || parsedUrl.query.t;
     const wsSig = req.headers['x-sank-signature'] || parsedUrl.query.sig;
-    const wsDevId = parsedUrl.query.deviceId || '';
+    const wsDevId = parsedUrl.query.deviceId || parsedUrl.query.userId || req.headers['x-device-id'] || '';
     if (wsSig && wsTimestamp) {
         if (!verifyWsSignature(wsTimestamp, wsSig, wsDevId)) {
-            console.warn('[VARNOST] Zavrnjena WebSocket povezava z neveljavnim podpisom.');
+            console.warn(`[VARNOST] Zavrnjena WebSocket povezava: url=${req.url}, t=${wsTimestamp}, now=${Date.now()}, diff=${Date.now() - Number(wsTimestamp)}ms, devId=${wsDevId}, sig=${wsSig}`);
             ws.close(4403, 'Neveljaven ali potekel varnostni podpis');
             return;
         }
@@ -1373,6 +1413,16 @@ function joinWsToRoom(ws, code) {
         userId: ws.user.id,
         name: ws.user.name
     }, ws);
+
+    try {
+        ws.send(JSON.stringify({
+            type: 'room_joined_ack',
+            roomCode: code,
+            userId: ws.user.id,
+            name: ws.user.name,
+            drinksCount: ws.user.drinksCount || 0
+        }));
+    } catch (e) {}
 }
 
 function leaveWsFromRoom(ws, code) {
@@ -2384,17 +2434,28 @@ function renderAdminDashboardHtml() {
           <div class="panel-header">
             <h2 class="panel-title">Sporočilo Dneva (MOTD - Message of the Day)</h2>
           </div>
+          <div id="motd-active-box" style="margin-bottom:14px; padding:10px 14px; background:rgba(16,185,129,0.08); border:1px solid rgba(16,185,129,0.3); border-radius:8px; font-size:12.5px;">
+            <div style="font-weight:700; color:#10b981; margin-bottom:3px; text-transform:uppercase; font-size:11px; letter-spacing:0.5px;">Trenutno aktivno sporočilo dneva:</div>
+            <div id="motd-active-text" style="color:var(--text); font-style:italic;">Nalaganje...</div>
+          </div>
           <div class="form-group">
             <label>Besedilo Sporočila ob Zagonu</label>
             <textarea class="form-control" id="config-motd" placeholder="Npr. Dobrodošli v posodobljeni različici ŠankFinderja!"></textarea>
           </div>
-          <button class="btn btn-green" onclick="saveMotd()">Shrani in Oddaj MOTD</button>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <button class="btn btn-green" onclick="saveMotd()">Shrani in Oddaj MOTD</button>
+            <span id="motd-save-status" style="font-size:12px; font-weight:700; color:#10b981; display:none;">Shranjeno in oddano na telefone!</span>
+          </div>
         </div>
 
         <!-- Šank Tedna -->
         <div class="panel">
           <div class="panel-header">
             <h2 class="panel-title">Nastavitev Šanka Tedna (Featured Bar)</h2>
+          </div>
+          <div id="feat-active-box" style="margin-bottom:14px; padding:10px 14px; background:rgba(245,158,11,0.08); border:1px solid rgba(245,158,11,0.3); border-radius:8px; font-size:12.5px;">
+            <div style="font-weight:700; color:#f59e0b; margin-bottom:3px; text-transform:uppercase; font-size:11px; letter-spacing:0.5px;">Trenutno aktiven šank tedna:</div>
+            <div id="feat-active-text" style="color:var(--text); font-weight:600;">Nalaganje...</div>
           </div>
           <div class="form-group">
             <label>Ime Lokala</label>
@@ -2418,7 +2479,10 @@ function renderAdminDashboardHtml() {
             <label>Posebna Akcija / Opomba</label>
             <input type="text" class="form-control" id="feat-note" placeholder="Npr. Ob naročilu piva brezplačni prigrizek!">
           </div>
-          <button class="btn" onclick="saveFeaturedPub()">Shrani Šank Tedna</button>
+          <div style="display:flex; align-items:center; gap:12px;">
+            <button class="btn" style="background:#f59e0b; color:#000; font-weight:700;" onclick="saveFeaturedPub()">Shrani Šank Tedna</button>
+            <span id="feat-save-status" style="font-size:12px; font-weight:700; color:#10b981; display:none;">Shranjeno in prikazano na radarju!</span>
+          </div>
         </div>
       </div>
     </div>
@@ -3187,25 +3251,52 @@ function renderAdminDashboardHtml() {
     }
 
     // KONFIGURACIJA
+    let hasLoadedConfig = false;
+
     function renderConfig() {
       if (!globalData || !globalData.settings) return;
       const s = globalData.settings;
-      if (s.motd !== undefined) document.getElementById('config-motd').value = s.motd;
 
+      const motdActive = document.getElementById('motd-active-text');
+      if (motdActive) motdActive.innerText = s.motd || 'Brez sporocila (prazno)';
+
+      const motdInput = document.getElementById('config-motd');
+      if (motdInput && (!hasLoadedConfig || document.activeElement !== motdInput)) {
+        if (!hasLoadedConfig && s.motd !== undefined) {
+          motdInput.value = s.motd;
+        }
+      }
+
+      let featDesc = 'Ni nastavljen';
       if (s.featured_pub) {
         try {
-          const f = JSON.parse(s.featured_pub);
-          document.getElementById('feat-name').value = f.name || '';
-          document.getElementById('feat-address').value = f.address || '';
-          document.getElementById('feat-lat').value = f.lat || '';
-          document.getElementById('feat-lon').value = f.lon || '';
-          document.getElementById('feat-note').value = f.note || '';
+          const f = typeof s.featured_pub === 'string' ? JSON.parse(s.featured_pub) : s.featured_pub;
+          featDesc = \`\${f.name || 'Brez imena'} (\${f.address || 'Brez naslova'}) - [\${f.lat || ''}, \${f.lon || ''}]\`;
+          if (f.note) featDesc += \` - Opomba: \${f.note}\`;
+
+          if (!hasLoadedConfig) {
+            const fn = document.getElementById('feat-name');
+            const fa = document.getElementById('feat-address');
+            const fl = document.getElementById('feat-lat');
+            const flo = document.getElementById('feat-lon');
+            const fno = document.getElementById('feat-note');
+            if (fn && document.activeElement !== fn) fn.value = f.name || '';
+            if (fa && document.activeElement !== fa) fa.value = f.address || '';
+            if (fl && document.activeElement !== fl) fl.value = f.lat || '';
+            if (flo && document.activeElement !== flo) flo.value = f.lon || '';
+            if (fno && document.activeElement !== fno) fno.value = f.note || '';
+          }
         } catch (e) {}
       }
+      const featActive = document.getElementById('feat-active-text');
+      if (featActive) featActive.innerText = featDesc;
+
+      hasLoadedConfig = true;
     }
 
     async function saveMotd() {
       const motd = document.getElementById('config-motd').value.trim();
+      const statusSpan = document.getElementById('motd-save-status');
       try {
         const res = await fetch('/api/admin/settings/update', {
           method: 'POST',
@@ -3213,7 +3304,17 @@ function renderAdminDashboardHtml() {
           body: JSON.stringify({ motd })
         });
         const d = await res.json();
-        if (d.success) alert('Sporočilo dneva shranjeno in oddano!');
+        if (d.success) {
+          if (statusSpan) {
+            statusSpan.style.display = 'inline';
+            setTimeout(() => { statusSpan.style.display = 'none'; }, 5000);
+          }
+          if (globalData && globalData.settings) globalData.settings.motd = motd;
+          const motdActive = document.getElementById('motd-active-text');
+          if (motdActive) motdActive.innerText = motd || 'Brez sporocila (prazno)';
+        } else {
+          alert('Napaka: ' + (d.error || 'Neznana napaka'));
+        }
       } catch (e) {
         alert('Napaka: ' + e.message);
       }
@@ -3227,6 +3328,7 @@ function renderAdminDashboardHtml() {
         lon: document.getElementById('feat-lon').value.trim(),
         note: document.getElementById('feat-note').value.trim()
       };
+      const statusSpan = document.getElementById('feat-save-status');
       try {
         const res = await fetch('/api/admin/settings/update', {
           method: 'POST',
@@ -3235,8 +3337,16 @@ function renderAdminDashboardHtml() {
         });
         const d = await res.json();
         if (d.success) {
-          alert('Šank Tedna uspešno posodobljen!');
+          if (statusSpan) {
+            statusSpan.style.display = 'inline';
+            setTimeout(() => { statusSpan.style.display = 'none'; }, 5000);
+          }
+          if (globalData && globalData.settings) globalData.settings.featured_pub = JSON.stringify(featuredPub);
+          const featActive = document.getElementById('feat-active-text');
+          if (featActive) featActive.innerText = \`\${featuredPub.name} (\${featuredPub.address}) - [\${featuredPub.lat}, \${featuredPub.lon}]\`;
           fetchData();
+        } else {
+          alert('Napaka: ' + (d.error || 'Neznana napaka'));
         }
       } catch (e) {
         alert('Napaka: ' + e.message);

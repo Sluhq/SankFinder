@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import com.example.sankfinder.ui.navigation.AppNavHost
 import com.example.sankfinder.ui.theme.AppTheme
 import com.example.compose.BeerGold
+import com.example.compose.DrajvGreen
 
 class MainActivity : ComponentActivity() {
 
@@ -82,12 +83,63 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val currentMotd by com.example.sankfinder.network.GlobalSyncManager.motd.collectAsState()
+            var dismissedMotd by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+
             AppTheme(darkTheme = isDarkTheme) {
                 androidx.compose.foundation.layout.Box(modifier = androidx.compose.ui.Modifier.fillMaxSize()) {
                     AppNavHost(
                         navController = navController,
                         themeDataStore = themeDataStore
                     )
+
+                    // Pasica za Sporočilo Dneva (MOTD)
+                    val activeMotd = currentMotd
+                    if (!activeMotd.isNullOrBlank() && activeMotd != dismissedMotd) {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = true,
+                            enter = androidx.compose.animation.slideInVertically() + androidx.compose.animation.fadeIn(),
+                            exit = androidx.compose.animation.slideOutVertically() + androidx.compose.animation.fadeOut(),
+                            modifier = androidx.compose.ui.Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = if (inAppAlert != null) 90.dp else 24.dp)
+                                .align(androidx.compose.ui.Alignment.TopCenter)
+                        ) {
+                            androidx.compose.material3.Surface(
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant,
+                                tonalElevation = 8.dp,
+                                shadowElevation = 8.dp,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, DrajvGreen.copy(alpha = 0.8f))
+                            ) {
+                                androidx.compose.foundation.layout.Row(
+                                    modifier = androidx.compose.ui.Modifier.padding(14.dp),
+                                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                                ) {
+                                    androidx.compose.foundation.layout.Column(modifier = androidx.compose.ui.Modifier.weight(1f)) {
+                                        androidx.compose.material3.Text(
+                                            text = "Sporočilo dneva",
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                            fontSize = 13.5.sp,
+                                            color = DrajvGreen
+                                        )
+                                        androidx.compose.material3.Text(
+                                            text = activeMotd,
+                                            fontSize = 12.5.sp,
+                                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                    androidx.compose.material3.IconButton(onClick = { dismissedMotd = activeMotd }) {
+                                        androidx.compose.material3.Icon(
+                                            androidx.compose.material.icons.Icons.Default.Close,
+                                            contentDescription = "Zapri",
+                                            tint = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
 
                     // Vizualna pasica za obvestilo uprave na vrhu zaslona
                     inAppAlert?.let { alert ->

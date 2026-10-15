@@ -369,7 +369,7 @@ fun HistoryPage(navController: NavController) {
                                 )
                                 if (ocena != null) {
                                     MetricBadge(
-                                        label = "⭐ $ocena / 5",
+                                        label = "Ocena: $ocena / 5",
                                         containerColor = BeerGold.copy(alpha = 0.18f),
                                         textColor = MaterialTheme.colorScheme.primary
                                     )
