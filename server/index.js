@@ -985,7 +985,7 @@ const server = http.createServer((req, res) => {
         return;
     }
 
-    // ADMIN API: POŠLJI SPOROČILO V SOBO KOT SKRBNIK (👑 ŠankFinder Uprava)
+    // ADMIN API: POŠLJI SPOROČILO V SOBO KOT SKRBNIK (ŠankFinder Uprava)
     if (pathname === '/api/admin/message/send' && req.method === 'POST') {
         if (!checkAdminAuth(req)) {
             res.writeHead(401, { 'Content-Type': 'application/json' });
@@ -1002,13 +1002,13 @@ const server = http.createServer((req, res) => {
                 const content = (data.content || '').trim();
                 if (!code || !content) throw new Error('Manjka koda sobe ali vsebina');
 
-                const resDb = stmtInsertMessage.run(code, 'admin', '👑 ŠankFinder Uprava', 'admin', content);
+                const resDb = stmtInsertMessage.run(code, 'admin', 'ŠankFinder Uprava', 'admin', content);
 
                 broadcastToRoom(code, {
                     type: 'new_message',
                     id: resDb.lastInsertRowid,
                     senderId: 'admin',
-                    senderName: '👑 ŠankFinder Uprava',
+                    senderName: 'ŠankFinder Uprava',
                     msgType: 'admin',
                     content: content,
                     createdAt: new Date().toISOString()
@@ -1505,7 +1505,7 @@ function renderAdminDashboardHtml() {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ŠankFinder | Nadzorni Center (Command Center)</title>
+  <title>ŠankFinder | Nadzorni Center</title>
   <link rel="icon" type="image/png" href="/logo.png">
   <link rel="shortcut icon" type="image/png" href="/logo.png">
   <link rel="apple-touch-icon" href="/logo.png">
@@ -1535,7 +1535,6 @@ function renderAdminDashboardHtml() {
       --purple: #8b5cf6;
       --purple-bg: rgba(139, 92, 246, 0.15);
       --border: #222f47;
-      --border-subtle: rgba(255, 255, 255, 0.07);
       --text: #f8fafc;
       --text-muted: #94a3b8;
     }
@@ -1824,7 +1823,7 @@ function renderAdminDashboardHtml() {
       .grid-2 { grid-template-columns: 1fr; }
     }
 
-    /* PREDLOGE IN ČIPI */
+    /* PREDLOGE */
     .chips-row {
       display: flex;
       flex-wrap: wrap;
@@ -1888,7 +1887,7 @@ function renderAdminDashboardHtml() {
     .notif-title { font-size: 13px; font-weight: 700; color: #f8fafc; margin-bottom: 2px; }
     .notif-body { font-size: 12px; color: #cbd5e1; line-height: 1.35; }
 
-    /* LEAFLET LIVE RADAR PRILAGODITVE */
+    /* LEAFLET LIVE RADAR - BREZPLAČEN OSM Z ELEGANTRNIM TEMNIM FILTROM (BREZ API KLJUČA) */
     #live-radar-map {
       height: 380px;
       width: 100%;
@@ -1896,6 +1895,10 @@ function renderAdminDashboardHtml() {
       overflow: hidden;
       border: 1px solid var(--border);
       z-index: 10;
+      background: #090d16;
+    }
+    .leaflet-tile-pane {
+      filter: brightness(0.65) invert(1) contrast(2.5) hue-rotate(200deg) saturate(0.35);
     }
     .custom-radar-icon {
       background: transparent;
@@ -2076,8 +2079,8 @@ function renderAdminDashboardHtml() {
         Osvežitev: <b id="refresh-countdown" style="color:var(--text);">5s</b>
       </span>
 
-      <button class="btn btn-green btn-sm" onclick="fetchData()">⚡ Osveži</button>
-      <a href="/sank-uprava-x77/logout" class="btn btn-red btn-sm" style="text-decoration:none;">🚪 Odjava</a>
+      <button class="btn btn-green btn-sm" onclick="fetchData()">Osveži</button>
+      <a href="/sank-uprava-x77/logout" class="btn btn-red btn-sm" style="text-decoration:none;">Odjava</a>
     </div>
   </header>
 
@@ -2095,11 +2098,11 @@ function renderAdminDashboardHtml() {
       <span class="tab-pill" id="badge-devices">0</span>
     </button>
     <button class="tab-btn" onclick="switchTab('squad')">
-      Pivska Klapa (Sobe & Klepet)
+      Pivska Klapa (Sobe in Klepet)
       <span class="tab-pill" id="badge-rooms">0</span>
     </button>
     <button class="tab-btn" onclick="switchTab('config')">
-      Konfiguracija & Šank Tedna
+      Konfiguracija in Šank Tedna
     </button>
   </div>
 
@@ -2113,8 +2116,8 @@ function renderAdminDashboardHtml() {
           <div class="stat-label">Aktivne Naprave v Živo</div>
           <div class="stat-number" id="stat-online-devices" style="color: var(--green);">0</div>
           <div class="stat-sub">
-            <span class="badge-tag" style="background:rgba(59,130,246,0.15); color:#60a5fa; font-size:10px;">🍎 iOS: <b id="stat-ios-count">0</b></span>
-            <span class="badge-tag" style="background:rgba(16,185,129,0.15); color:#34d399; font-size:10px;">🤖 Android: <b id="stat-android-count">0</b></span>
+            <span class="badge-tag" style="background:rgba(59,130,246,0.15); color:#60a5fa; font-size:10px;">iOS: <b id="stat-ios-count">0</b></span>
+            <span class="badge-tag" style="background:rgba(16,185,129,0.15); color:#34d399; font-size:10px;">Android: <b id="stat-android-count">0</b></span>
           </div>
         </div>
 
@@ -2159,18 +2162,18 @@ function renderAdminDashboardHtml() {
         </div>
       </div>
 
-      <!-- SREDINSKI SKLOP: ZEMLJEVID AKTIVNIH KLAP V ŽIVO (LEAFLET.JS) -->
+      <!-- SREDINSKI SKLOP: ZEMLJEVID AKTIVNIH KLAP V ŽIVO (LEAFLET.JS Z BREZPLAČNIM OSM BREZ API KLJUČA) -->
       <div class="panel">
         <div class="panel-header">
           <h2 class="panel-title">
-            🛰️ Zemljevid Aktivnih Klap & Uporabnikov v Živo (Live Radar)
+            Zemljevid Aktivnih Klap v Živo (Live Radar)
             <span class="status-badge" style="background:rgba(245, 158, 11, 0.15); color:var(--gold); border-color:rgba(245, 158, 11, 0.3);" id="radar-live-count">
               0 uporabnikov na zemljevidu
             </span>
           </h2>
           <div style="display:flex; gap:8px;">
-            <button class="btn btn-sm btn-blue" onclick="centerOnLjubljana()">🎯 Centriraj na Ljubljano</button>
-            <button class="btn btn-sm" onclick="fitRadarBounds()">✨ Prilagodi pogled na vse</button>
+            <button class="btn btn-sm btn-blue" onclick="centerOnLjubljana()">Centriraj na Ljubljano</button>
+            <button class="btn btn-sm" onclick="fitRadarBounds()">Prilagodi pogled na vse</button>
           </div>
         </div>
         <div id="live-radar-map"></div>
@@ -2181,24 +2184,24 @@ function renderAdminDashboardHtml() {
         <!-- LEVO: HITRO PUSH OBVESTILO Z VIZUALNIM PREDOGLEDOM -->
         <div class="panel">
           <div class="panel-header">
-            <h2 class="panel-title">📢 Hitro Push Obvestilo za Naprave</h2>
+            <h2 class="panel-title">Hitro Push Obvestilo za Naprave</h2>
           </div>
 
           <div class="chips-row">
             <span style="font-size:11px; font-weight:700; color:var(--text-muted); align-self:center;">Predloge:</span>
-            <button class="chip-btn" onclick="applyTemplate('happy_hour')">🍻 Happy Hour!</button>
-            <button class="chip-btn" onclick="applyTemplate('burek')">🥐 Burek Pavza?</button>
-            <button class="chip-btn" onclick="applyTemplate('update')">🔄 Posodobitev</button>
-            <button class="chip-btn" onclick="applyTemplate('uprava')">👑 Uprava sporoča</button>
+            <button class="chip-btn" onclick="applyTemplate('happy_hour')">Happy Hour</button>
+            <button class="chip-btn" onclick="applyTemplate('burek')">Burek Pavza</button>
+            <button class="chip-btn" onclick="applyTemplate('update')">Posodobitev</button>
+            <button class="chip-btn" onclick="applyTemplate('uprava')">Sporočilo Uprave</button>
           </div>
 
           <div class="form-group">
             <label>Ciljna Skupina (Target)</label>
             <select class="form-control" id="quick-push-target" onchange="onTargetChange()">
-              <option value="all">🌐 Vsi uporabniki (iOS & Android)</option>
-              <option value="ios">🍎 Samo iOS naprave (Apple)</option>
-              <option value="android">🤖 Samo Android naprave</option>
-              <option value="room">🍻 Določena Pivska Klapa (vnos kode)</option>
+              <option value="all">Vsi uporabniki (iOS in Android)</option>
+              <option value="ios">Samo iOS naprave (Apple)</option>
+              <option value="android">Samo Android naprave</option>
+              <option value="room">Določena Pivska Klapa (vnos kode)</option>
             </select>
           </div>
 
@@ -2222,7 +2225,7 @@ function renderAdminDashboardHtml() {
             <div class="phone-top-bar">
               <span id="preview-clock">21:30</span>
               <span>Predogled na zaklenjenem zaslonu</span>
-              <span>🔋 92%</span>
+              <span>92%</span>
             </div>
             <div class="lockscreen-notif">
               <div class="notif-header">
@@ -2237,7 +2240,7 @@ function renderAdminDashboardHtml() {
 
           <div style="margin-top:14px;">
             <button class="btn" style="width:100%; justify-content:center; padding:10px;" onclick="sendQuickPush()">
-              🚀 Pošlji Potisno Obvestilo
+              Pošlji Potisno Obvestilo
             </button>
           </div>
         </div>
@@ -2245,8 +2248,8 @@ function renderAdminDashboardHtml() {
         <!-- DESNO: STANJE SISTEMSKIH STORITEV IN TELEMETRIJA -->
         <div class="panel">
           <div class="panel-header">
-            <h2 class="panel-title">⚙️ Stanje Sistemskih Storitev & Telemetrija</h2>
-            <button class="btn btn-sm btn-blue" onclick="runDiagnostics()">⚡ Hitri Test API-jev</button>
+            <h2 class="panel-title">Stanje Sistemskih Storitev in Telemetrija</h2>
+            <button class="btn btn-sm btn-blue" onclick="runDiagnostics()">Hitri Test API-jev</button>
           </div>
 
           <table>
@@ -2284,15 +2287,15 @@ function renderAdminDashboardHtml() {
 
           <div style="margin-top:18px; padding-top:14px; border-top:1px solid var(--border); display:flex; gap:10px; flex-wrap:wrap;">
             <button class="btn btn-blue btn-sm" onclick="cleanOldRooms()">
-              🧹 Počisti neaktivne sobe (> 24h)
+              Počisti neaktivne sobe (> 24h)
             </button>
             <a href="/api/admin/db/backup" class="btn btn-sm" style="text-decoration:none;">
-              💾 Prenesi varnostno kopijo (.db)
+              Prenesi varnostno kopijo (.db)
             </a>
           </div>
 
           <div id="diagnostics-box" style="margin-top:14px; display:none; background:#090e18; padding:12px; border-radius:8px; border:1px solid var(--border); font-size:12px;">
-            <div style="font-weight:700; color:var(--gold); margin-bottom:6px;">📊 Rezultati Diagnostičnega Testiranja:</div>
+            <div style="font-weight:700; color:var(--gold); margin-bottom:6px;">Rezultati Diagnostičnega Testiranja:</div>
             <div id="diag-details"></div>
           </div>
         </div>
@@ -2311,7 +2314,7 @@ function renderAdminDashboardHtml() {
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Naslov & Sporočilo</th>
+                <th>Naslov in Sporočilo</th>
                 <th>Cilj</th>
                 <th>Prejemniki</th>
                 <th>Čas Pošiljanja</th>
@@ -2343,7 +2346,7 @@ function renderAdminDashboardHtml() {
           <table>
             <thead>
               <tr>
-                <th>Platforma & Model</th>
+                <th>Platforma in Model</th>
                 <th>ID Naprave</th>
                 <th>App Verzija</th>
                 <th>Trenutni Zaslon v Živo</th>
@@ -2360,11 +2363,11 @@ function renderAdminDashboardHtml() {
       </div>
     </div>
 
-    <!-- ZAVIHEK 4: PIVSKA KLAPA (SOBE & KLEPET) -->
+    <!-- ZAVIHEK 4: PIVSKA KLAPA (SOBE IN KLEPET) -->
     <div class="tab-pane" id="tab-squad">
       <div class="panel">
         <div class="panel-header">
-          <h2 class="panel-title">Aktivne Pivske Klape (Sobe & Povezani Prijatelji)</h2>
+          <h2 class="panel-title">Aktivne Pivske Klape (Sobe in Povezani Prijatelji)</h2>
           <input type="text" class="search-input" id="search-rooms" placeholder="Išči sobo po kodi ali imenu..." oninput="renderRoomsCards()">
         </div>
         <div id="rooms-cards-grid" style="display:grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap:14px;">
@@ -2373,7 +2376,7 @@ function renderAdminDashboardHtml() {
       </div>
     </div>
 
-    <!-- ZAVIHEK 5: KONFIGURACIJA & ŠANK TEDNA -->
+    <!-- ZAVIHEK 5: KONFIGURACIJA IN ŠANK TEDNA -->
     <div class="tab-pane" id="tab-config">
       <div class="grid-2">
         <!-- MOTD -->
@@ -2385,13 +2388,13 @@ function renderAdminDashboardHtml() {
             <label>Besedilo Sporočila ob Zagonu</label>
             <textarea class="form-control" id="config-motd" placeholder="Npr. Dobrodošli v posodobljeni različici ŠankFinderja!"></textarea>
           </div>
-          <button class="btn btn-green" onclick="saveMotd()">💾 Shrani & Oddaj MOTD</button>
+          <button class="btn btn-green" onclick="saveMotd()">Shrani in Oddaj MOTD</button>
         </div>
 
         <!-- Šank Tedna -->
         <div class="panel">
           <div class="panel-header">
-            <h2 class="panel-title">⭐ Nastavitev Šanka Tedna (Featured Bar)</h2>
+            <h2 class="panel-title">Nastavitev Šanka Tedna (Featured Bar)</h2>
           </div>
           <div class="form-group">
             <label>Ime Lokala</label>
@@ -2415,7 +2418,7 @@ function renderAdminDashboardHtml() {
             <label>Posebna Akcija / Opomba</label>
             <input type="text" class="form-control" id="feat-note" placeholder="Npr. Ob naročilu piva brezplačni prigrizek!">
           </div>
-          <button class="btn" onclick="saveFeaturedPub()">⭐ Shrani Šank Tedna</button>
+          <button class="btn" onclick="saveFeaturedPub()">Shrani Šank Tedna</button>
         </div>
       </div>
     </div>
@@ -2430,7 +2433,7 @@ function renderAdminDashboardHtml() {
           <span class="code-badge" id="modal-room-code">XXXX</span>
           <h3 style="font-size:15px; font-weight:800;" id="modal-room-name">Ime Sobe</h3>
         </div>
-        <button class="btn btn-red btn-sm" onclick="closeChatModal()">✕ Zapri</button>
+        <button class="btn btn-red btn-sm" onclick="closeChatModal()">Zapri</button>
       </div>
 
       <div class="modal-body">
@@ -2440,7 +2443,7 @@ function renderAdminDashboardHtml() {
             <div style="text-align:center; color:var(--text-muted); font-size:12px;">Nalaganje sporočil...</div>
           </div>
           <div class="modal-foot">
-            <input type="text" class="form-control" id="modal-admin-msg-input" placeholder="Pošlji kot 👑 ŠankFinder Uprava..." onkeydown="if(event.key==='Enter') sendAdminMessage()">
+            <input type="text" class="form-control" id="modal-admin-msg-input" placeholder="Pošlji kot Uprava..." onkeydown="if(event.key==='Enter') sendAdminMessage()">
             <button class="btn btn-green btn-sm" onclick="sendAdminMessage()">Pošlji</button>
           </div>
         </div>
@@ -2448,7 +2451,7 @@ function renderAdminDashboardHtml() {
         <!-- DESNO: ČLANI Z MOŽNOSTJO POPRAVKA PIJAČ -->
         <div class="modal-members-pane">
           <div style="font-size:11px; font-weight:800; color:var(--text-muted); text-transform:uppercase; margin-bottom:4px;">
-            Člani & Števci Piva:
+            Člani in Števci Pijač:
           </div>
           <div id="modal-members-list" style="display:flex; flex-direction:column; gap:6px;">
             <!-- Člani -->
@@ -2456,7 +2459,7 @@ function renderAdminDashboardHtml() {
 
           <div style="margin-top:auto; padding-top:10px; border-top:1px solid var(--border);">
             <button class="btn btn-red btn-sm" style="width:100%; justify-content:center;" onclick="deleteCurrentRoom()">
-              🗑️ Zapri in izbriši sobo
+              Zapri in izbriši sobo
             </button>
           </div>
         </div>
@@ -2487,10 +2490,9 @@ function renderAdminDashboardHtml() {
 
       L.control.zoom({ position: 'bottomright' }).addTo(radarMap);
 
-      // CartoDB Dark Matter temna podlaga
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
+      // Popolnoma brezplačne OpenStreetMap ploščice (brez API ključa) z elegantnim temnim filtrom
+      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
         maxZoom: 19
       }).addTo(radarMap);
 
@@ -2551,7 +2553,7 @@ function renderAdminDashboardHtml() {
                   <span class="code-badge">\${escapeHtml(m.room_code)}</span>
                 </div>
                 <div style="font-size:11.5px; color:#cbd5e1; margin-bottom:4px;">
-                  🍺 Popitih piv: <b style="color:#f59e0b;">\${drinks}</b>
+                  Pijače: <b style="color:#f59e0b;">\${drinks}</b>
                 </div>
                 <div style="font-size:10.5px; color:#64748b; font-family:'JetBrains Mono',monospace;">
                   \${m.lat.toFixed(5)}, \${m.lon.toFixed(5)}
@@ -2575,8 +2577,8 @@ function renderAdminDashboardHtml() {
             html: \`
               <div style="position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center;">
                 <div style="position:absolute; width:34px; height:34px; border-radius:50%; background:rgba(16,185,129,0.3); animation:pinPulse 2s infinite;"></div>
-                <div style="width:26px; height:26px; border-radius:50%; background:#10b981; border:2px solid #fff; display:flex; align-items:center; justify-content:center; box-shadow:0 0 10px rgba(16,185,129,0.7); font-size:13px;">
-                  ⭐
+                <div style="width:26px; height:26px; border-radius:50%; background:#10b981; border:2px solid #fff; display:flex; align-items:center; justify-content:center; box-shadow:0 0 10px rgba(16,185,129,0.7); font-size:10px; font-weight:800; color:#000;">
+                  TOP
                 </div>
               </div>
             \`,
@@ -2775,17 +2777,17 @@ function renderAdminDashboardHtml() {
       const msgInput = document.getElementById('quick-push-msg');
 
       if (type === 'happy_hour') {
-        titleInput.value = '🍻 Petkov Happy Hour v Ljubljani!';
+        titleInput.value = 'Petkov Happy Hour v Ljubljani!';
         msgInput.value = 'Petek je tu! Šanki se polnijo, odpri zemljevid in preveri, kje se zbira tvoja klapa!';
       } else if (type === 'burek') {
-        titleInput.value = '🥐 Čas za Burek Pavzo?';
+        titleInput.value = 'Čas za Burek Pavzo?';
         msgInput.value = 'Pivski večer se preveša v noč. Odpri orodje Burek Pavza za seznam odprtih pekarn!';
       } else if (type === 'update') {
-        titleInput.value = '⚡ Nova posodobitev ŠankFinderja';
+        titleInput.value = 'Nova posodobitev ŠankFinderja';
         msgInput.value = 'Na voljo je sveža posodobitev aplikacije z izboljšanim radarjem in vodenjem v smeri hoje.';
       } else if (type === 'uprava') {
-        titleInput.value = '👑 Poziv ŠankFinder Uprave';
-        msgInput.value = 'Častimo dobro voljo! Preveri nov Šank Tedna v zavihku Šanki in se pridruži zabavi!';
+        titleInput.value = 'Sporočilo ŠankFinder Uprave';
+        msgInput.value = 'Preveri nov Šank Tedna v zavihku Šanki in se pridruži zabavi!';
       }
       updateLivePreview();
     }
@@ -2876,8 +2878,8 @@ function renderAdminDashboardHtml() {
           <td style="color:var(--text-muted); font-size:11.5px;">\${formatTime(item.created_at)}</td>
           <td>
             <div style="display:flex; gap:6px;">
-              <button class="btn btn-sm btn-blue" onclick="reusePush('\${escapeJs(item.title)}', '\${escapeJs(item.message)}')">🔁</button>
-              <button class="btn btn-sm btn-red" onclick="deletePush(\${item.id})">🗑️</button>
+              <button class="btn btn-sm btn-blue" onclick="reusePush('\${escapeJs(item.title)}', '\${escapeJs(item.message)}')">Uporabi</button>
+              <button class="btn btn-sm btn-red" onclick="deletePush(\${item.id})">Izbriši</button>
             </div>
           </td>
         </tr>
@@ -2944,7 +2946,7 @@ function renderAdminDashboardHtml() {
         const lastSeen = d.last_seen || d.lastSeen;
 
         const isIos = (model + ' ' + os).toLowerCase().includes('ios') || (model + ' ' + os).toLowerCase().includes('iphone');
-        const platformIcon = isIos ? '🍎' : '🤖';
+        const platformBadge = isIos ? '<span class="badge-tag" style="background:rgba(59,130,246,0.15); color:#60a5fa;">iOS</span>' : '<span class="badge-tag" style="background:rgba(16,185,129,0.15); color:#34d399;">Android</span>';
 
         let screenColor = 'var(--blue)';
         if (screen.includes('Zemljevid') || screen.includes('Šank')) screenColor = 'var(--green)';
@@ -2954,8 +2956,8 @@ function renderAdminDashboardHtml() {
         return \`
           <tr>
             <td>
-              <span style="font-size:14px; margin-right:4px;">\${platformIcon}</span>
-              <strong>\${escapeHtml(model)}</strong>
+              \${platformBadge}
+              <strong style="margin-left:4px;">\${escapeHtml(model)}</strong>
               <div style="font-size:11px; color:var(--text-muted);">\${escapeHtml(os)}</div>
             </td>
             <td class="mono" style="font-size:11px;" title="\${devId}">
@@ -2979,7 +2981,7 @@ function renderAdminDashboardHtml() {
             <td class="mono" style="font-size:11.5px; color:var(--text-muted);">\${escapeHtml(ip)}</td>
             <td>
               <button class="btn btn-sm btn-blue" onclick="sendDirectPushPrompt('\${devId}')">
-                🔔 Osebni Push
+                Osebni Push
               </button>
             </td>
           </tr>
@@ -2990,7 +2992,7 @@ function renderAdminDashboardHtml() {
     function sendDirectPushPrompt(devId) {
       const msg = prompt('Vnesite vsebino sporočila za to napravo:');
       if (msg && msg.trim()) {
-        document.getElementById('quick-push-title').value = '🔔 Osebno sporočilo Uprave';
+        document.getElementById('quick-push-title').value = 'Osebno sporočilo Uprave';
         document.getElementById('quick-push-msg').value = msg.trim();
         sendQuickPush(\`device:\${devId}\`);
       }
@@ -3026,14 +3028,14 @@ function renderAdminDashboardHtml() {
               </div>
               <h3 style="font-size:16px; font-weight:800; color:var(--text);">\${escapeHtml(r.name || 'Pivska Klapa')}</h3>
               <div style="margin-top:8px; font-size:12.5px; color:var(--text-muted); display:flex; gap:12px;">
-                <span>👥 <b>\${membersOfRoom.length}</b> članov</span>
-                <span>🍺 <b>\${roomDrinks}</b> piv</span>
+                <span>Člani: <b>\${membersOfRoom.length}</b></span>
+                <span>Pijače: <b>\${roomDrinks}</b></span>
               </div>
             </div>
 
             <div style="display:flex; gap:8px; margin-top:10px;">
               <button class="btn btn-sm btn-blue" style="flex:1; justify-content:center;" onclick="openChatModal('\${r.code}', '\${escapeJs(r.name)}')">
-                💬 Klepet & Člani
+                Klepet in Člani
               </button>
             </div>
           </div>
@@ -3080,7 +3082,7 @@ function renderAdminDashboardHtml() {
             <div class="msg-sender">\${escapeHtml(m.sender_name)}</div>
             <div class="msg-text">\${escapeHtml(m.content)}</div>
           </div>
-          <button class="btn btn-sm btn-red" style="padding:2px 6px; font-size:10px;" onclick="deleteMessage(\${m.id})">🗑️</button>
+          <button class="btn btn-sm btn-red" style="padding:2px 6px; font-size:10px;" onclick="deleteMessage(\${m.id})">Izbriši</button>
         </div>
       \`).join('');
       box.scrollTop = box.scrollHeight;
