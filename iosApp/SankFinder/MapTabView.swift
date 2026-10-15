@@ -20,6 +20,7 @@ struct MapTabView: View {
     @State private var activeRoute: OsrmRoute?
     @State private var currentStepIndex: Int = 0
     @State private var distanceToNextStep: Double = 0.0
+    @State private var isFollowingUser: Bool = true
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var showAddedToHistoryAlert: Bool = false
@@ -31,7 +32,7 @@ struct MapTabView: View {
             CustomMapView(
                 centerCoordinate: $centerCoord,
                 centerTrigger: centerTrigger,
-                userHeading: locationManager.heading,
+                userHeading: (locationManager.speed >= 0.5 && locationManager.course >= 0) ? locationManager.course : locationManager.heading,
                 mapHeading: $mapHeading,
                 resetHeadingTrigger: resetHeadingTrigger,
                 bars: network.bars,
@@ -40,6 +41,9 @@ struct MapTabView: View {
                 routeCoordinates: activeRoute?.coordinates ?? [],
                 routeSteps: activeRoute?.legs?.first?.steps ?? [],
                 currentStepIndex: currentStepIndex,
+                isNavigating: activeRoute != nil,
+                isFollowingUser: $isFollowingUser,
+                userLocation: locationManager.location,
                 onSelectLokal: { bar in
                     selectedBar = bar
                 }
@@ -120,6 +124,30 @@ struct MapTabView: View {
                     }
                     .padding(.trailing, 16)
                     .padding(.bottom, (selectedBar != nil || activeRoute != nil) ? 10 : 85)
+                }
+                
+                // Gumb za ponovno osredotočenje in usmeritev kamere v smeri hoje (Google Maps slog)
+                if activeRoute != nil && !isFollowingUser {
+                    Button(action: {
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            isFollowingUser = true
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "location.fill")
+                                .font(.system(size: 13, weight: .bold))
+                            Text("Centriraj")
+                                .font(.system(size: 13, weight: .bold))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 9)
+                        .background(Color.beerGold)
+                        .foregroundColor(.black)
+                        .clipShape(Capsule())
+                        .shadow(color: .black.opacity(0.4), radius: 6, y: 2)
+                    }
+                    .transition(.scale.combined(with: .opacity))
+                    .padding(.bottom, 4)
                 }
                 
                 // Spodnji Navigation Status HUD (med navigacijo)
@@ -289,6 +317,7 @@ struct MapTabView: View {
             Button(action: {
                 activeRoute = nil
                 selectedBar = nil
+                isFollowingUser = true
                 locationManager.setBackgroundMode(active: false)
                 LiveNavigationManager.shared.stopNavigation()
             }) {
@@ -339,6 +368,7 @@ struct MapTabView: View {
             Button(action: {
                 activeRoute = nil
                 selectedBar = nil
+                isFollowingUser = true
                 locationManager.setBackgroundMode(active: false)
                 LiveNavigationManager.shared.stopNavigation()
             }) {
@@ -473,6 +503,7 @@ struct MapTabView: View {
                 DispatchQueue.main.async {
                     self.activeRoute = route
                     self.currentStepIndex = 0
+                    self.isFollowingUser = true
                     self.isLoading = false
                     self.locationManager.setBackgroundMode(active: true)
                     

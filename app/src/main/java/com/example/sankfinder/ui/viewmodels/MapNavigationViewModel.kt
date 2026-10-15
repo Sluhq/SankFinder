@@ -251,4 +251,57 @@ class MapNavigationViewModel : ViewModel() {
         // Vedno vrni prihajajoči manever (ovinek pred nami), ali ciljni korak ob koncu
         return if (idx + 1 < steps.size) steps[idx + 1] else steps.last()
     }
+
+    /**
+     * Vrne ciljno usmeritev (bearing v stopinjah) za usmeritev kamere v smeri hoje (Google Maps slog).
+     */
+    fun getTargetNavigationBearing(): Float? {
+        val userLoc = _userLocation.value ?: return null
+        
+        // 1. Če ima prihajajoči manever veljavne koordinate in je oddaljen več kot 8m
+        val step = getCurrentStep()
+        val loc = step?.maneuver?.location
+        if (loc != null && loc.size >= 2) {
+            val manLat = loc[1]
+            val manLon = loc[0]
+            val destLoc = Location("man").apply {
+                latitude = manLat
+                longitude = manLon
+            }
+            if (userLoc.distanceTo(destLoc) > 8.0f) {
+                val b = userLoc.bearingTo(destLoc)
+                return (b + 360f) % 360f
+            }
+        }
+        
+        // 2. Če imamo točke rute, izračunaj smer vzdolž naslednjega odseka poti
+        val points = _routePoints.value
+        if (points.size >= 2) {
+            var minIdx = 0
+            var minDist = Float.MAX_VALUE
+            for (i in 0 until points.size - 1) {
+                val p = points[i]
+                val pLoc = Location("p").apply {
+                    latitude = p.latitude
+                    longitude = p.longitude
+                }
+                val d = userLoc.distanceTo(pLoc)
+                if (d < minDist) {
+                    minDist = d
+                    minIdx = i
+                }
+            }
+            val nextIdx = (minIdx + 1).coerceAtMost(points.size - 1)
+            val p1 = points[minIdx]
+            val p2 = points[nextIdx]
+            if (p1.latitude != p2.latitude || p1.longitude != p2.longitude) {
+                val l1 = Location("l1").apply { latitude = p1.latitude; longitude = p1.longitude }
+                val l2 = Location("l2").apply { latitude = p2.latitude; longitude = p2.longitude }
+                val b = l1.bearingTo(l2)
+                return (b + 360f) % 360f
+            }
+        }
+        
+        return null
+    }
 }

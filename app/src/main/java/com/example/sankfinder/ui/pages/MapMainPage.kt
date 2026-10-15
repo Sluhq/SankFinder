@@ -14,6 +14,8 @@ import android.view.MotionEvent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -151,6 +153,7 @@ fun MapMainPage(
     var maneuverMarkerRef by remember { mutableStateOf<Marker?>(null) }
     val pubMarkersRef = remember { mutableListOf<Marker>() }
     var mapOrientationDeg by remember { mutableFloatStateOf(0f) }
+    var isTrackingUser by remember { mutableStateOf(true) }
 
     // Enkratno ustvarjen in ohranjen MapView za stabilno delovanje brez NPE
     val mapView = remember {
@@ -173,8 +176,23 @@ fun MapMainPage(
             rotationOverlay.isEnabled = true
             overlays.add(rotationOverlay)
 
-            // Posodobi mapOrientationDeg ob dotiku/rotaciji v realnem času
-            setOnTouchListener { _, _ ->
+            // Posodobi mapOrientationDeg in zaznaj ročni premik karte med navigacijo
+            var touchDownX = 0f
+            var touchDownY = 0f
+            setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        touchDownX = event.x
+                        touchDownY = event.y
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val dx = kotlin.math.abs(event.x - touchDownX)
+                        val dy = kotlin.math.abs(event.y - touchDownY)
+                        if ((dx > 25f || dy > 25f) && isNavigating && isTrackingUser) {
+                            isTrackingUser = false
+                        }
+                    }
+                }
                 if (kotlin.math.abs(mapOrientation - mapOrientationDeg) > 0.5f) {
                     mapOrientationDeg = mapOrientation
                 }
@@ -288,10 +306,31 @@ fun MapMainPage(
         }
     }
 
-    var isTrackingUser by remember { mutableStateOf(true) }
+    // Preklop navigacijskega načina: samodejna orientacija v smeri hoje in osredotočenje (Google Maps slog)
+    LaunchedEffect(isNavigating) {
+        if (isNavigating) {
+            isTrackingUser = true
+            val loc = userLocation
+            if (loc != null) {
+                val targetGeo = GeoPoint(loc.latitude, loc.longitude)
+                mapView.controller.setZoom(18.5)
+                mapView.controller.animateTo(targetGeo)
+            }
+            val initialBearing = mapNavViewModel.getTargetNavigationBearing() ?: userHeading
+            val orientation = (360f - (initialBearing % 360f)) % 360f
+            mapView.mapOrientation = orientation
+            mapOrientationDeg = orientation
+            mapView.postInvalidate()
+        } else {
+            isTrackingUser = true
+            mapView.mapOrientation = 0f
+            mapOrientationDeg = 0f
+            mapView.postInvalidate()
+        }
+    }
 
     // Posodobitev položaja modre pikice uporabnika z gladko animacijo hoje in sledenjem kamere
-    LaunchedEffect(userLocation) {
+    LaunchedEffect(userLocation, isNavigating, isTrackingUser, userHeading) {
         val loc = userLocation ?: return@LaunchedEffect
         val targetGeo = GeoPoint(loc.latitude, loc.longitude)
 
@@ -304,15 +343,33 @@ fun MapMainPage(
             mapView.overlays.add(newMarker)
             userMarkerRef = newMarker
             mapView.controller.setCenter(targetGeo)
-            mapView.controller.setZoom(16.5)
+            mapView.controller.setZoom(if (isNavigating) 18.5 else 16.5)
         }
 
-        // Če je sledenje vklopljeno ali je aktivna navigacija, naj kamera zvezno sledi uporabniku
-        if (isTrackingUser || isNavigating) {
+        // Če je sledenje vklopljeno, kamera zvezno sledi uporabniku v središču
+        if (isTrackingUser) {
             mapView.controller.animateTo(targetGeo)
+            if (isNavigating) {
+                val navBearing = if (loc.hasBearing() && loc.bearing != 0f) {
+                    loc.bearing
+                } else {
+                    mapNavViewModel.getTargetNavigationBearing() ?: userHeading
+                }
+                val newOrientation = (360f - (navBearing % 360f)) % 360f
+                if (kotlin.math.abs(mapView.mapOrientation - newOrientation) > 2.5f) {
+                    mapView.mapOrientation = newOrientation
+                    mapOrientationDeg = newOrientation
+                }
+            }
         }
 
         if (marker != null && marker.position != null) {
+            if (isNavigating && isTrackingUser) {
+                marker.rotation = 0f // Kaže naravnost naprej (gor na zaslonu)
+            } else {
+                marker.rotation = -userHeading
+            }
+
             val startLat = marker.position.latitude
             val startLon = marker.position.longitude
             val deltaLat = targetGeo.latitude - startLat
@@ -334,14 +391,6 @@ fun MapMainPage(
                 marker.position = targetGeo
                 mapView.postInvalidate()
             }
-        }
-    }
-
-    // Posodobitev smeri usmerjevalne puščice
-    LaunchedEffect(userHeading) {
-        userMarkerRef?.let { marker ->
-            marker.rotation = -userHeading
-            mapView.postInvalidate()
         }
     }
 
@@ -438,8 +487,8 @@ fun MapMainPage(
             routeCasingPolylineRef = casing
             routePolylineRef = polyline
 
-            // Samodejno centriraj pogled na celotno pot
-            if (routePoints.size >= 2) {
+            // Samodejno centriraj pogled na celotno pot le pred začetkom navigacije (predogled)
+            if (!isNavigating && routePoints.size >= 2) {
                 mapView.zoomToBoundingBox(polyline.bounds, true, 120)
             }
         }
@@ -702,6 +751,59 @@ fun MapMainPage(
                         onScanReceipt = { lokalForReceiptScan = lokal },
                         onOpenExternalMaps = { openInExternalMaps(context, lokal) }
                     )
+                }
+            }
+
+            // GUMB ZA PONOVNO CENTRIRANJE IN USMERITEV V SMER HOJE (Google Maps slog)
+            AnimatedVisibility(
+                visible = isNavigating && !isTrackingUser,
+                enter = scaleIn() + fadeIn(),
+                exit = scaleOut() + fadeOut(),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 96.dp)
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = BeerGold,
+                    shadowElevation = 8.dp,
+                    modifier = Modifier.clickable {
+                        isTrackingUser = true
+                        val loc = userLocation
+                        if (loc != null) {
+                            val targetGeo = GeoPoint(loc.latitude, loc.longitude)
+                            mapView.controller.setZoom(18.5)
+                            mapView.controller.animateTo(targetGeo)
+                            val navBearing = if (loc.hasBearing() && loc.bearing != 0f) {
+                                loc.bearing
+                            } else {
+                                mapNavViewModel.getTargetNavigationBearing() ?: userHeading
+                            }
+                            val newOrientation = (360f - (navBearing % 360f)) % 360f
+                            mapView.mapOrientation = newOrientation
+                            mapOrientationDeg = newOrientation
+                            mapView.postInvalidate()
+                        }
+                    }
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 9.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Navigation,
+                            contentDescription = "Centriraj",
+                            tint = Color.Black,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Centriraj",
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                    }
                 }
             }
 

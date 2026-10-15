@@ -378,8 +378,9 @@ class UserHeadingAnnotationView: MKAnnotationView {
         containerView.addSubview(innerDot)
     }
     
-    func updateHeading(_ heading: Double) {
-        let radians = CGFloat(heading * .pi / 180.0)
+    func updateHeading(_ heading: Double, mapHeading: Double = 0.0) {
+        let relative = (heading - mapHeading + 360.0).truncatingRemainder(dividingBy: 360.0)
+        let radians = CGFloat(relative * .pi / 180.0)
         UIView.animate(withDuration: 0.12) {
             self.containerView.transform = CGAffineTransform(rotationAngle: radians)
         }
@@ -593,6 +594,10 @@ struct CustomMapView: UIViewRepresentable {
     var routeCoordinates: [CLLocationCoordinate2D]
     var routeSteps: [OsrmStep] = []
     var currentStepIndex: Int = 0
+    var isNavigating: Bool = false
+    @Binding var isFollowingUser: Bool
+    var userLocation: CLLocationCoordinate2D? = nil
+    var targetBearing: Double? = nil
     var onSelectLokal: (Lokal) -> Void
     
     func makeUIView(context: Context) -> MKMapView {
@@ -600,6 +605,11 @@ struct CustomMapView: UIViewRepresentable {
         mapView.delegate = context.coordinator
         mapView.showsUserLocation = true
         mapView.userTrackingMode = .none
+        
+        // Zaznaj ročni dotik / premik karte za izklop samodejnega sledenja
+        let panGesture = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handlePanGesture(_:)))
+        panGesture.delegate = context.coordinator
+        mapView.addGestureRecognizer(panGesture)
         
         // Prepreči prikaz nezaželenih Apple ikon in stavb
         mapView.pointOfInterestFilter = .excludingAll
@@ -627,18 +637,100 @@ struct CustomMapView: UIViewRepresentable {
     
     func updateUIView(_ uiView: MKMapView, context: Context) {
         context.coordinator.parent = self
-        context.coordinator.currentUserView?.updateHeading(userHeading)
+        context.coordinator.currentUserView?.updateHeading(userHeading, mapHeading: uiView.camera.heading)
         
-        // Sproži osredotočenje kamere ob klicu centerTrigger ali ko se spremeni centerCoordinate
-        if context.coordinator.lastCenterTrigger != centerTrigger, let center = centerCoordinate {
-            context.coordinator.lastCenterTrigger = centerTrigger
-            context.coordinator.lastCenteredId = "\(center.latitude),\(center.longitude)"
-            let region = MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012))
-            uiView.setRegion(region, animated: true)
-        } else if let center = centerCoordinate, context.coordinator.lastCenteredId != "\(center.latitude),\(center.longitude)" {
-            context.coordinator.lastCenteredId = "\(center.latitude),\(center.longitude)"
-            let region = MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012))
-            uiView.setRegion(region, animated: true)
+        // 1. Upravljanje navigacijske kamere (Sledenje uporabniku v smeri hoje - Google Maps slog)
+        if isNavigating {
+            if !context.coordinator.wasNavigating {
+                // Ravnokar smo začeli navigacijo: osredotoči se na uporabnika in obrni v smer poti
+                context.coordinator.wasNavigating = true
+                context.coordinator.wasFollowingUser = true
+                
+                let initialBearing: Double
+                if let target = targetBearing {
+                    initialBearing = target
+                } else if routeCoordinates.count >= 2 {
+                    initialBearing = calculateBearing(from: routeCoordinates[0], to: routeCoordinates[1])
+                } else if userHeading > 0 {
+                    initialBearing = userHeading
+                } else {
+                    initialBearing = 0.0
+                }
+                
+                let center = userLocation ?? centerCoordinate ?? LocationManager.defaultCoordinate
+                let navCamera = MKMapCamera(
+                    lookingAtCenter: center,
+                    fromDistance: 320.0,
+                    pitch: 0.0,
+                    heading: initialBearing
+                )
+                uiView.setCamera(navCamera, animated: true)
+            } else if isFollowingUser, let userCoord = userLocation {
+                // Med aktivno hojo: kamera zvezno sledi uporabniku v središču in se obrača v smer hoje
+                let targetHeading: Double
+                if let target = targetBearing {
+                    targetHeading = target
+                } else if currentStepIndex < routeSteps.count,
+                          let loc = routeSteps[currentStepIndex].maneuver?.location, loc.count >= 2 {
+                    let stepCoord = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
+                    let d = distanceBetween(userCoord, stepCoord)
+                    if d > 12.0 {
+                        targetHeading = calculateBearing(from: userCoord, to: stepCoord)
+                    } else if userHeading > 0 {
+                        targetHeading = userHeading
+                    } else {
+                        targetHeading = uiView.camera.heading
+                    }
+                } else if userHeading > 0 {
+                    targetHeading = userHeading
+                } else {
+                    targetHeading = uiView.camera.heading
+                }
+                
+                let curCam = uiView.camera
+                let dist = distanceBetween(curCam.centerCoordinate, userCoord)
+                let hDiff = abs(curCam.heading - targetHeading)
+                let becameFollowing = (!context.coordinator.wasFollowingUser && isFollowingUser)
+                
+                if dist > 1.5 || hDiff > 4.0 || becameFollowing {
+                    let followCam = MKMapCamera(
+                        lookingAtCenter: userCoord,
+                        fromDistance: 320.0,
+                        pitch: 0.0,
+                        heading: targetHeading
+                    )
+                    uiView.setCamera(followCam, animated: true)
+                }
+                context.coordinator.wasFollowingUser = isFollowingUser
+            } else {
+                context.coordinator.wasFollowingUser = isFollowingUser
+            }
+        } else {
+            if context.coordinator.wasNavigating {
+                // Zaključek navigacije -> poravnaj nazaj na sever in vrni privzeti pregled
+                context.coordinator.wasNavigating = false
+                context.coordinator.wasFollowingUser = false
+                let curCam = uiView.camera
+                let resetCam = MKMapCamera(
+                    lookingAtCenter: curCam.centerCoordinate,
+                    fromDistance: 1200.0,
+                    pitch: 0.0,
+                    heading: 0.0
+                )
+                uiView.setCamera(resetCam, animated: true)
+            }
+            
+            // Standardno osredotočenje kamere ob klicu centerTrigger ali spremembi centerCoordinate
+            if context.coordinator.lastCenterTrigger != centerTrigger, let center = centerCoordinate {
+                context.coordinator.lastCenterTrigger = centerTrigger
+                context.coordinator.lastCenteredId = "\(center.latitude),\(center.longitude)"
+                let region = MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012))
+                uiView.setRegion(region, animated: true)
+            } else if let center = centerCoordinate, context.coordinator.lastCenteredId != "\(center.latitude),\(center.longitude)" {
+                context.coordinator.lastCenteredId = "\(center.latitude),\(center.longitude)"
+                let region = MKCoordinateRegion(center: center, span: MKCoordinateSpan(latitudeDelta: 0.012, longitudeDelta: 0.012))
+                uiView.setRegion(region, animated: true)
+            }
         }
         
         // Ponastavitev orientacije na sever (kompas gumb)
@@ -649,24 +741,22 @@ struct CustomMapView: UIViewRepresentable {
             uiView.setCamera(newCam, animated: true)
         }
         
-        // 1. Posodobitev navigacijske rute
+        // 2. Posodobitev navigacijske rute
         let currentPolylines = uiView.overlays.compactMap { $0 as? MKPolyline }
         uiView.removeOverlays(currentPolylines)
         
         if !routeCoordinates.isEmpty {
             let polyline = MKPolyline(coordinates: routeCoordinates, count: routeCoordinates.count)
-            // Ključno: Polyline dodamo na .aboveLabels, s čimer je 100% zagotovljeno,
-            // da je črta vedno na vrhu nad ploščicami pri vseh stopnjah zumiranja!
+            // Polyline dodamo na .aboveLabels, da je vedno nad ploščicami
             uiView.addOverlay(polyline, level: .aboveLabels)
             
-            // Samodejno prilagodi pogled na celotno traso, ko se nova pot naloži
-            if context.coordinator.lastRouteCount != routeCoordinates.count {
+            // Predogled celotne trase SAMO pred začetkom aktivne navigacije
+            if !isNavigating && context.coordinator.lastRouteCount != routeCoordinates.count {
                 context.coordinator.lastRouteCount = routeCoordinates.count
                 let edgeInsets = UIEdgeInsets(top: 100, left: 60, bottom: 200, right: 60)
                 uiView.setVisibleMapRect(polyline.boundingMapRect, edgePadding: edgeInsets, animated: true)
             }
             
-            // Odznači označevalce, da ne motijo navigacije
             uiView.selectedAnnotations = []
         } else {
             context.coordinator.lastRouteCount = 0
@@ -771,12 +861,14 @@ struct CustomMapView: UIViewRepresentable {
         Coordinator(self)
     }
     
-    class Coordinator: NSObject, MKMapViewDelegate {
+    class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         var parent: CustomMapView
         var lastCenteredId: String? = nil
         var lastCenterTrigger: UUID? = nil
         var lastResetHeadingTrigger: UUID? = nil
         var lastRouteCount: Int = 0
+        var wasNavigating: Bool = false
+        var wasFollowingUser: Bool = false
         weak var currentUserView: UserHeadingAnnotationView? = nil
         weak var currentManeuverView: CurvedManeuverAnnotationView? = nil
         
@@ -784,9 +876,23 @@ struct CustomMapView: UIViewRepresentable {
             self.parent = parent
         }
         
+        @objc func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
+            // Če uporabnik ročno premakne zemljevid med navigacijo, začasno izklopi samodejno sledenje
+            if gesture.state == .began && parent.isNavigating && parent.isFollowingUser {
+                DispatchQueue.main.async {
+                    self.parent.isFollowingUser = false
+                }
+            }
+        }
+        
+        func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+            return true
+        }
+        
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             let heading = mapView.camera.heading
             currentManeuverView?.updateRotation(mapHeading: heading)
+            currentUserView?.updateHeading(parent.userHeading, mapHeading: heading)
             if abs(parent.mapHeading - heading) > 0.5 {
                 DispatchQueue.main.async {
                     self.parent.mapHeading = heading
@@ -814,7 +920,7 @@ struct CustomMapView: UIViewRepresentable {
                 } else {
                     view?.annotation = annotation
                 }
-                view?.updateHeading(parent.userHeading)
+                view?.updateHeading(parent.userHeading, mapHeading: mapView.camera.heading)
                 self.currentUserView = view
                 return view
             }

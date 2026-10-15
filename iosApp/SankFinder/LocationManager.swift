@@ -12,6 +12,8 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var accuracy: CLLocationAccuracy = -1.0
     @Published var hasRealLocation: Bool = false
     @Published var heading: Double = 0.0
+    @Published var course: Double = -1.0
+    @Published var speed: Double = 0.0
     @Published var isAuthorized: Bool = false
     @Published var errorDescription: String?
     
@@ -89,6 +91,10 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         DispatchQueue.main.async {
             self.accuracy = latest.horizontalAccuracy
             self.location = latest.coordinate
+            if latest.course >= 0 {
+                self.course = latest.course
+            }
+            self.speed = max(0, latest.speed)
             self.hasRealLocation = true
             self.isAuthorized = true
         }
