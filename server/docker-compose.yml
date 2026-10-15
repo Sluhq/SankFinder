@@ -8,6 +8,8 @@ services:
     volumes:
       - ./data:/app/data
       - ./index.js:/app/index.js
+      - ./logo.png:/app/logo.png
+      - ./favicon.png:/app/favicon.png
     env_file:
       - .env
     environment:
