@@ -24,7 +24,11 @@ struct MaterialTopAppBar<Actions: View>: View {
                         .frame(width: 38, height: 38)
                 }
             } else {
-                Spacer().frame(width: 38)
+                Image("Logo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 28, height: 28)
+                    .frame(width: 38, alignment: .leading)
             }
             
             Spacer()

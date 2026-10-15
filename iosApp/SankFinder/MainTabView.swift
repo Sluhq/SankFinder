@@ -4,6 +4,7 @@ struct MainTabView: View {
     @StateObject private var locationManager = LocationManager()
     @StateObject private var globalSync = GlobalSyncManager.shared
     @ObservedObject private var bridge = NavigationBridge.shared
+    @State private var showSplashScreen: Bool = true
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -69,6 +70,13 @@ struct MainTabView: View {
                 }
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .animation(.spring(), value: globalSync.activePushAlert?.id)
+            }
+            
+            // 4. ANIMIRAN ZAGONSKI / NALAGALNI ZASLON (SPLASH SCREEN) - 100% usklajen z Androidom
+            if showSplashScreen {
+                SplashScreenView(isPresented: $showSplashScreen)
+                    .transition(.opacity)
+                    .zIndex(100)
             }
         }
         .edgesIgnoringSafeArea(.bottom)

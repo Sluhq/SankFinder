@@ -116,19 +116,22 @@ fun SplashScreen(navController: NavController) {
                 .padding(32.dp)
                 .scale(scaleAnim * pulseScale)
         ) {
-            // Posodobljen in moderniziran logotip
+            // Uradni posodobljeni ŠankFinder PNG logotip s pivskim sijem
             Box(
                 modifier = Modifier
-                    .size(140.dp)
-                    .shadow(24.dp, RoundedCornerShape(32.dp), spotColor = Color(0xFF00E5FF))
-                    .clip(RoundedCornerShape(32.dp))
-                    .background(Color(0xFF131D31))
+                    .size(150.dp)
+                    .shadow(28.dp, RoundedCornerShape(36.dp), spotColor = Color(0xFFF59E0B), ambientColor = Color(0xFFF59E0B))
+                    .clip(RoundedCornerShape(36.dp))
+                    .background(Color(0xFF10192D)),
+                contentAlignment = Alignment.Center
             ) {
                 Image(
-                    painter = painterResource(id = R.drawable.sankfinder_logo_modern),
+                    painter = painterResource(id = R.drawable.sankfinder_logo),
                     contentDescription = "ŠankFinder Logo",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(14.dp)
                 )
             }
 

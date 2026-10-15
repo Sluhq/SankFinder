@@ -239,7 +239,19 @@ Navigacija je centralizirana v [AppNavHost.kt](file:///c:/Android/SankFinder/app
      - **Brisanje neprimernih sporočil:** Vsako sporočilo ima gumb *Izbriši*, ki nemudoma odstrani zapis iz SQLite baze.
      - **Urejen videz:** Odstranjeni vsi nezaželeni emojiji v korist profesionalnega, preglednega temnega vmesnika z animiranim stanjem strežnika.
 
-### 5.8 Primerjalna Matrika Funkcionalnosti (Android vs iOS)
+### 5.8 Grafična Podoba, Logotip in Zagonski / Nalagalni Zaslon (Splash Screen)
+- **Uradni logotip (PNG):** Prepoznavna ikona lokacijskega zatiča (map pin) z vrisanim pivskim kozarcem in belo peno na prosojni podlagi.
+- **Ikone aplikacije (Launcher Icons):**
+  - **Android:** Prilagodljiva (Adaptive) ikona z ozadjem `#0F172A` in natančno centriranim zatičem v vseh gostotah (`mipmap-mdpi`, `hdpi`, `xhdpi`, `xxhdpi`, `xxxhdpi`).
+  - **iOS:** `AppIcon.appiconset` v vseh resolucijah (od 40x40 do 1024x1024) na temnem ozadju `#0B1828`.
+- **Zagonski / Nalagalni zaslon (Splash Screen):**
+  - Tako na Androidu ([SplashScreen.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/SplashScreen.kt)) kot na iOS ([SplashScreenView.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/SplashScreenView.swift)) je vgrajen vizualno usklajen začetni zaslon z animacijo utripanja/dihanja zatiča, pivskim sijem ter linearnim kazalnikom napredka.
+  - V seznamu lokalov se ob prvem nalaganju prav tako prikaže logotip z animiranim indikatorjem.
+- **Spletna nadzorna plošča (Dashboard) & Zavihek v brskalniku:**
+  - V zavihku brskalnika je nastavljen uradni favicon (`/favicon.png` in `/logo.png`), tako da zavihek prikazuje zatič s pivom namesto privzete ikone globusa.
+  - V glavi nadzorne plošče (`<header>`) je vgrajen uradni logotip z zlatim sijem.
+
+### 5.9 Primerjalna Matrika Funkcionalnosti (Android vs iOS)
 
 | Funkcionalnost / Modul | Android (Kotlin / Compose) | iOS (Swift / SwiftUI) | Stanje Paritete |
 |---|---|---|:---:|

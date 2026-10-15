@@ -296,6 +296,19 @@ Za vrhunsko uporabniško izkušnjo so vsi vnosni obrazci opremljeni z:
 
 ---
 
+### 5.9 Grafična Podoba, Logotip in Zagonski / Nalagalni Zaslon (Splash Screen)
+
+- **Uradni logotip (PNG):** Prepoznavna ikona lokacijskega zatiča (map pin) z vrisanim pivskim kozarcem in belo peno na prosojni podlagi.
+- **Ikone aplikacije (AppIcon.appiconset):**
+  - Poln nabor resolucij za iOS (`1024x1024`, `180x180`, `120x120`, `87x87`, `80x80`, `58x58`, `40x40`) s temnim ozadjem `#0B1828` in natančno centrirano ikono.
+- **Zagonski / Nalagalni zaslon (SplashScreenView.swift):**
+  - Ob zagonu aplikacije se v [MainTabView.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/MainTabView.swift) prikaže animiran zaslon ([SplashScreenView.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/SplashScreenView.swift)) s prelivom `#0F172A` do `#060913`, utripanjem zatiča, pivskim sijem ter linearnim kazalnikom napredka.
+  - V [BarsListView.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/BarsListView.swift) se ob začetnem nalaganju lokalov prikaže logotip z zlatim indikatorjem.
+- **Vgrajen nabor slik (Logo.imageset):**
+  - Za uporabo v SwiftUI komponentah je na voljo vektorsko čist transparenten PNG zatič (`Image("Logo")`).
+
+---
+
 ## 6. Postopek Gradnje & Generiranje IPA Paketa (CI/CD)
 
 Projekt uporablja avtomatiziran GitHub Actions cevovod na macOS tekaču (`macos-latest`):

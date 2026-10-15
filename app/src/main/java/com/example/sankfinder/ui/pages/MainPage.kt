@@ -7,6 +7,7 @@ import android.content.Intent
 import android.location.Location
 import android.net.Uri
 import android.util.Log
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -77,12 +78,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import com.example.sankfinder.R
 import com.example.compose.BeerGold
 import com.example.compose.DrajvGreen
 import com.example.compose.DrajvRed
@@ -301,7 +304,34 @@ fun MainPage(
                 onRefresh = { triggerRefresh() },
                 modifier = Modifier.fillMaxSize()
             ) {
-                if (filteredLokali.isEmpty() && !isRefreshing.value) {
+                if (filteredLokali.isEmpty() && isRefreshing.value) {
+                    // Loading State z logotipom ŠankFinder
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Image(
+                            painter = painterResource(id = R.drawable.sankfinder_logo),
+                            contentDescription = "ŠankFinder",
+                            modifier = Modifier.size(80.dp)
+                        )
+                        Spacer(modifier = Modifier.height(18.dp))
+                        CircularProgressIndicator(
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(36.dp),
+                            strokeWidth = 3.5.dp
+                        )
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text(
+                            text = "Nalagam šanke v bližini...",
+                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                } else if (filteredLokali.isEmpty() && !isRefreshing.value) {
                     // Friendly Empty State
                     Column(
                         modifier = Modifier

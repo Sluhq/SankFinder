@@ -2,7 +2,11 @@ package com.example.sankfinder.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -14,7 +18,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.example.sankfinder.R
 import com.example.sankfinder.ui.navigation.Routes
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -57,6 +64,14 @@ fun AppTopBar(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Nazaj",
                             tint = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                } else {
+                    Box(modifier = Modifier.padding(start = 14.dp)) {
+                        Image(
+                            painter = painterResource(id = R.drawable.sankfinder_logo),
+                            contentDescription = "ŠankFinder Logo",
+                            modifier = Modifier.size(28.dp)
                         )
                     }
                 }

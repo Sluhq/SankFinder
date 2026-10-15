@@ -226,6 +226,20 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // Uradni logo in favicon za nadzorno ploščo in spletne odjemalce (PNG)
+    if (pathname === '/logo.png' || pathname === '/favicon.ico' || pathname === '/favicon.png') {
+        const fileToServe = (pathname === '/favicon.png' || pathname === '/favicon.ico') ? 'favicon.png' : 'logo.png';
+        const imgPath = path.join(__dirname, fileToServe);
+        if (fs.existsSync(imgPath)) {
+            res.writeHead(200, {
+                'Content-Type': 'image/png',
+                'Cache-Control': 'public, max-age=86400'
+            });
+            fs.createReadStream(imgPath).pipe(res);
+            return;
+        }
+    }
+
     // SKRITA ADMIN NADZORNA PLOŠČA (Dostopna samo na lokalnem portu 8080)
     if (pathname === '/sank-uprava-x77') {
         if (!checkAdminAuth(req)) {
@@ -889,6 +903,9 @@ function renderAdminDashboardHtml() {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ŠankFinder | Razvojna Nadzorna Plošča (Celoten App)</title>
+  <link rel="icon" type="image/png" href="/logo.png">
+  <link rel="shortcut icon" type="image/png" href="/logo.png">
+  <link rel="apple-touch-icon" href="/logo.png">
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -1232,6 +1249,7 @@ function renderAdminDashboardHtml() {
 
   <header>
     <div class="brand">
+      <img src="/logo.png" alt="ŠankFinder Logo" style="height: 38px; width: 38px; object-fit: contain; filter: drop-shadow(0 2px 8px rgba(245, 158, 11, 0.45));">
       <span class="badge-tag">UPRAVA</span>
       <h1 class="brand-title">ŠankFinder Nadzorna Plošča (Celoten App)</h1>
     </div>

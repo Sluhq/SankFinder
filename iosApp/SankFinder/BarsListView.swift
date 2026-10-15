@@ -113,12 +113,19 @@ struct BarsListView: View {
                 // 3. SEZNAM LOKALOV (Material 3 Kartice)
                 if network.isLoadingBars && network.bars.isEmpty {
                     Spacer()
-                    VStack(spacing: 12) {
+                    VStack(spacing: 16) {
+                        Image("Logo")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 80, height: 80)
+                            .shadow(color: Theme.beerGold.opacity(0.4), radius: 14)
+                        
                         ProgressView()
                             .progressViewStyle(CircularProgressViewStyle(tint: Theme.beerGold))
                             .scaleEffect(1.4)
+                        
                         Text("Nalagam šanke v bližini...")
-                            .font(.caption)
+                            .font(.system(size: 13, weight: .medium))
                             .foregroundColor(Theme.textMuted)
                     }
                     Spacer()
