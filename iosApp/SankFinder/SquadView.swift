@@ -8,9 +8,81 @@ struct SquadView: View {
     @State private var messageInput: String = ""
     @State private var selectedTab: Int = 0 // 0 = Vstopi, 1 = Ustvari
     @State private var showTrackerSheet: Bool = false
-    @State private var showLeaveAlert: Bool = false
+    @State private var isLeaveConvincing: Bool = false
+    @State private var currentLeaveStepIndex: Int = 0
+    @State private var activeLeaveSteps: [LeaveConvinceStep] = []
     @State private var showShareSheet: Bool = false
     @State private var chatExportText: String = ""
+    
+    struct LeaveConvinceStep {
+        let title: String
+        let message: String
+        let stayButton: String
+        let leaveButton: String
+    }
+    
+    let allLeaveStepsPool: [LeaveConvinceStep] = [
+        LeaveConvinceStep(
+            title: "A res že greš?!",
+            message: "Noč v mestu je še mlada, pipe pa še točijo! Brez tebe klapa nikoli več ne bo ista.",
+            stayButton: "Imaš prav, ostanem!",
+            leaveButton: "Vseeno grem..."
+        ),
+        LeaveConvinceStep(
+            title: "Lahko greš, ampak kje je runda?!",
+            message: "Zlato pravilo Pivske Klape: kdor zapusti mizo pred polnočjo, mora najprej vsem častiti še eno rundo za slovo!",
+            stayButton: "Dobra ideja, častim rundo!",
+            leaveButton: "Nimam več za rundo, grem..."
+        ),
+        LeaveConvinceStep(
+            title: "Kdo bo pa pel z nami?!",
+            message: "Brez tebe klapa ni več ista! Kdo bo pel refrene, tolkel po mizi in držal vzdušje? Ne razdiraj ekipe!",
+            stayButton: "Ostajam do konca!",
+            leaveButton: "Moram domov..."
+        ),
+        LeaveConvinceStep(
+            title: "Tvoja jetra pravijo: Zdrži!",
+            message: "Ravnokar smo se ogreli, ti bi pa že stisnil rep med noge? Saj nismo prišli na otroško čajanko!",
+            stayButton: "Ok, še eno pivo z vami!",
+            leaveButton: "Moja jetra prosijo milosti..."
+        ),
+        LeaveConvinceStep(
+            title: "Predsednik šanka bo razočaran!",
+            message: "Predčasen odhod iz klape se uradno vpiše v register izdajalcev mize. Si res pripravljen na ta sramotni pečat?",
+            stayButton: "Nočem sramote, ostajam!",
+            leaveButton: "Vseeno sprejmem pečat..."
+        ),
+        LeaveConvinceStep(
+            title: "Kaj pa nočni burek?!",
+            message: "Zapustiti klapo pred obveznim nočnim burekom z vsem je protizakonito po 3. členu šankerskega zakonika!",
+            stayButton: "Burek me je prepričal!",
+            leaveButton: "Burek bo počakal, jaz grem..."
+        ),
+        LeaveConvinceStep(
+            title: "Pivo brez tebe bo žalostno...",
+            message: "Natakar ravno odpira nov sod, ti bi pa zapustil svojo zvesto klapo? Daj no, še en požirek!",
+            stayButton: "Še en požirek z vami!",
+            leaveButton: "Res moram iti..."
+        ),
+        LeaveConvinceStep(
+            title: "Tvoja postelja ne gre nikamor!",
+            message: "Postelja bo doma počakala, tale večer in nepozabne zgodbe s klapo pa so samo danes!",
+            stayButton: "Res je, postelja počaka!",
+            leaveButton: "Moja postelja me kliče..."
+        ),
+        LeaveConvinceStep(
+            title: "Zadnji poskus: Bodi legenda!",
+            message: "Legende nikoli ne zapustijo bojišča prve. Bodi tisti, ki zdrži, ne tisti, o katerem se jutri govori z obžalovanjem!",
+            stayButton: "Sem legenda, ostajam!",
+            leaveButton: "Danes nisem legenda, grem..."
+        ),
+        LeaveConvinceStep(
+            title: "Klapa te ima rada!",
+            message: "Poglej okoli sebe – to so tvoji pivski tovariši! Če odideš zdaj, bo na mizi ostal prazen stol in prazno srce.",
+            stayButton: "Tudi jaz vas imam rad, ostanem!",
+            leaveButton: "Saj se kmalu spet vidimo..."
+        )
+    ]
     
     var body: some View {
         ZStack {
@@ -30,7 +102,7 @@ struct SquadView: View {
                                         .foregroundColor(Theme.beerGold)
                                 }
                                 
-                                Button(action: { showLeaveAlert = true }) {
+                                Button(action: startLeaveSequence) {
                                     Text("Zapusti")
                                         .font(.system(size: 13, weight: .bold))
                                         .foregroundColor(Theme.drajvRed)
@@ -71,14 +143,30 @@ struct SquadView: View {
             GlobalSyncManager.shared.reportScreen("Pivska Klapa")
             nicknameInput = squad.myUserName
         }
-        .alert(isPresented: $showLeaveAlert) {
-            Alert(
-                title: Text("Zapusti Pivsko Klapo?"),
-                message: Text("Ali si prepričan, da želiš zapustiti to sobo? Izgubil boš povezavo s klepetom in radarjem."),
-                primaryButton: .destructive(Text("Zapusti")) {
-                    squad.leaveRoom()
+        .alert(isPresented: $isLeaveConvincing) {
+            guard activeLeaveSteps.indices.contains(currentLeaveStepIndex) else {
+                return Alert(title: Text("Pivska Klapa"), dismissButton: .default(Text("V redu")))
+            }
+            let step = activeLeaveSteps[currentLeaveStepIndex]
+            let isLast = (currentLeaveStepIndex == activeLeaveSteps.count - 1)
+            
+            return Alert(
+                title: Text(step.title),
+                message: Text(step.message),
+                primaryButton: .default(Text(step.stayButton)) {
+                    isLeaveConvincing = false
                 },
-                secondaryButton: .cancel(Text("Prekliči"))
+                secondaryButton: .destructive(Text(step.leaveButton)) {
+                    if isLast {
+                        isLeaveConvincing = false
+                        squad.leaveRoom()
+                    } else {
+                        currentLeaveStepIndex += 1
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                            isLeaveConvincing = true
+                        }
+                    }
+                }
             )
         }
         .sheet(isPresented: $showTrackerSheet) {
@@ -517,6 +605,22 @@ struct SquadView: View {
         export += "Tvoje zabeležene pijače: \(squad.myDrinksCount)\n"
         chatExportText = export
         showShareSheet = true
+    }
+    
+    private func startLeaveSequence() {
+        let count = Int.random(in: 3...5)
+        var steps = Array(allLeaveStepsPool.shuffled().prefix(count))
+        steps.append(
+            LeaveConvinceStep(
+                title: "Zadnja potrditev: Zapustiti klapo?",
+                message: "Prestal si vsa prepričevanja klape! Ali res želiš zapustiti to Pivsko Klapo ter prekiniti klepet v živo in radar prijateljev?",
+                stayButton: "Premislil sem si, ostajam!",
+                leaveButton: "Dokončno zapusti"
+            )
+        )
+        activeLeaveSteps = steps
+        currentLeaveStepIndex = 0
+        isLeaveConvincing = true
     }
     
     private func quickPhraseButton(_ text: String, msgType: String = "text") -> some View {

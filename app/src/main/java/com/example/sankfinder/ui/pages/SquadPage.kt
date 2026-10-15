@@ -65,9 +65,11 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlin.random.Random
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -90,6 +92,13 @@ import com.example.compose.DrajvRed
 import com.example.sankfinder.data.SquadMessage
 import com.example.sankfinder.ui.navigation.Routes
 import com.example.sankfinder.ui.viewmodels.SquadViewModel
+
+data class SquadLeaveConvinceStep(
+    val title: String,
+    val message: String,
+    val stayButton: String,
+    val leaveButton: String
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -114,8 +123,77 @@ fun SquadPage(
     var inputRoomName by remember { mutableStateOf("") }
     var inputUserName by remember { mutableStateOf(myUserName) }
     var chatInput by remember { mutableStateOf("") }
-    var showLeaveDialog by remember { mutableStateOf(false) }
     var showTrackerSheet by remember { mutableStateOf(false) }
+
+    val allLeaveStepsPool = remember {
+        listOf(
+            SquadLeaveConvinceStep(
+                title = "A res že greš?!",
+                message = "Noč v mestu je še mlada, pipe pa še točijo! Brez tebe klapa nikoli več ne bo ista.",
+                stayButton = "Imaš prav, ostanem!",
+                leaveButton = "Vseeno grem..."
+            ),
+            SquadLeaveConvinceStep(
+                title = "Lahko greš, ampak kje je runda?!",
+                message = "Zlato pravilo Pivske Klape: kdor zapusti mizo pred polnočjo, mora najprej vsem častiti še eno rundo za slovo!",
+                stayButton = "Dobra ideja, častim rundo!",
+                leaveButton = "Nimam več za rundo, grem..."
+            ),
+            SquadLeaveConvinceStep(
+                title = "Kdo bo pa pel z nami?!",
+                message = "Brez tebe klapa ni več ista! Kdo bo pel refrene, tolkel po mizi in držal vzdušje? Ne razdiraj ekipe!",
+                stayButton = "Ostajam do konca!",
+                leaveButton = "Moram domov..."
+            ),
+            SquadLeaveConvinceStep(
+                title = "Tvoja jetra pravijo: Zdrži!",
+                message = "Ravnokar smo se ogreli, ti bi pa že stisnil rep med noge? Saj nismo prišli na otroško čajanko!",
+                stayButton = "Ok, še eno pivo z vami!",
+                leaveButton = "Moja jetra prosijo milosti..."
+            ),
+            SquadLeaveConvinceStep(
+                title = "Predsednik šanka bo razočaran!",
+                message = "Predčasen odhod iz klape se uradno vpiše v register izdajalcev mize. Si res pripravljen na ta sramotni pečat?",
+                stayButton = "Nočem sramote, ostajam!",
+                leaveButton = "Vseeno sprejmem pečat..."
+            ),
+            SquadLeaveConvinceStep(
+                title = "Kaj pa nočni burek?!",
+                message = "Zapustiti klapo pred obveznim nočnim burekom z vsem je protizakonito po 3. členu šankerskega zakonika!",
+                stayButton = "Burek me je prepričal!",
+                leaveButton = "Burek bo počakal, jaz grem..."
+            ),
+            SquadLeaveConvinceStep(
+                title = "Pivo brez tebe bo žalostno...",
+                message = "Natakar ravno odpira nov sod, ti bi pa zapustil svojo zvesto klapo? Daj no, še en požirek!",
+                stayButton = "Še en požirek z vami!",
+                leaveButton = "Res moram iti..."
+            ),
+            SquadLeaveConvinceStep(
+                title = "Tvoja postelja ne gre nikamor!",
+                message = "Postelja bo doma počakala, tale večer in nepozabne zgodbe s klapo pa so samo danes!",
+                stayButton = "Res je, postelja počaka!",
+                leaveButton = "Moja postelja me kliče..."
+            ),
+            SquadLeaveConvinceStep(
+                title = "Zadnji poskus: Bodi legenda!",
+                message = "Legende nikoli ne zapustijo bojišča prve. Bodi tisti, ki zdrži, ne tisti, o katerem se jutri govori z obžalovanjem!",
+                stayButton = "Sem legenda, ostajam!",
+                leaveButton = "Danes nisem legenda, grem..."
+            ),
+            SquadLeaveConvinceStep(
+                title = "Klapa te ima rada!",
+                message = "Poglej okoli sebe – to so tvoji pivski tovariši! Če odideš zdaj, bo na mizi ostal prazen stol in prazno srce.",
+                stayButton = "Tudi jaz vas imam rad, ostanem!",
+                leaveButton = "Saj se kmalu spet vidimo..."
+            )
+        )
+    }
+
+    val activeLeaveSteps = remember { mutableStateListOf<SquadLeaveConvinceStep>() }
+    var leaveStepIndex by remember { mutableIntStateOf(0) }
+    var isLeaveConvincingOpen by remember { mutableStateOf(false) }
+    var showFinalLeaveDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
 
@@ -134,27 +212,74 @@ fun SquadPage(
         }
     }
 
-    if (showLeaveDialog) {
+    // NAKLJUČNI DIALOGI ZA PREGOVARJANJE PRED ODHODOM IZ KLAPE
+    if (isLeaveConvincingOpen && leaveStepIndex in activeLeaveSteps.indices) {
+        val stepData = activeLeaveSteps[leaveStepIndex]
+
         AlertDialog(
-            onDismissRequest = { showLeaveDialog = false },
-            title = { Text("Zapusti klapo?", fontWeight = FontWeight.Bold) },
+            onDismissRequest = {
+                isLeaveConvincingOpen = false
+                leaveStepIndex = 0
+            },
+            icon = {
+                Icon(Icons.Default.SportsBar, contentDescription = null, tint = BeerGold, modifier = Modifier.size(34.dp))
+            },
+            title = {
+                Text(stepData.title, fontWeight = FontWeight.Bold, fontSize = 17.sp, textAlign = TextAlign.Center)
+            },
             text = {
-                Text("Ali si prepričan, da želiš zapustiti to Pivsko Klapo? S tem boš prekinil klepet v živo in deljenje lokacije.")
+                Text(stepData.message, fontSize = 14.sp, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurface)
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        showLeaveDialog = false
+                        isLeaveConvincingOpen = false
+                        leaveStepIndex = 0
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = BeerGold)
+                ) {
+                    Text(stepData.stayButton, color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        if (leaveStepIndex + 1 < activeLeaveSteps.size) {
+                            leaveStepIndex += 1
+                        } else {
+                            isLeaveConvincingOpen = false
+                            showFinalLeaveDialog = true
+                        }
+                    }
+                ) {
+                    Text(stepData.leaveButton, color = DrajvRed)
+                }
+            }
+        )
+    }
+
+    // KONČNI DIALOG ZA IZHOD IZ KLAPE (po vseh prestanih prepričevanjih)
+    if (showFinalLeaveDialog) {
+        AlertDialog(
+            onDismissRequest = { showFinalLeaveDialog = false },
+            title = { Text("Zadnja potrditev: Zapustiti klapo?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Prestal si vsa prepričevanja klape! Ali res želiš zapustiti to Pivsko Klapo ter prekiniti klepet v živo in radar prijateljev?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showFinalLeaveDialog = false
                         squadViewModel.leaveSquad()
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = DrajvRed)
                 ) {
-                    Text("Zapusti", color = Color.White, fontWeight = FontWeight.Bold)
+                    Text("Dokončno zapusti", color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showLeaveDialog = false }) {
-                    Text("Prekliči")
+                TextButton(onClick = { showFinalLeaveDialog = false }) {
+                    Text("Ostani v klapi")
                 }
             }
         )
@@ -262,8 +387,15 @@ fun SquadPage(
                             Icon(Icons.Default.Map, contentDescription = "Radar na zemljevidu", tint = BeerGold)
                         }
 
-                        // Zapusti klapo (z opozorilom)
-                        IconButton(onClick = { showLeaveDialog = true }) {
+                        // Zapusti klapo (z zabavnim prepričevanjem)
+                        IconButton(onClick = {
+                            val randomCount = Random.nextInt(3, 6)
+                            activeLeaveSteps.clear()
+                            activeLeaveSteps.addAll(allLeaveStepsPool.shuffled().take(randomCount))
+                            leaveStepIndex = 0
+                            isLeaveConvincingOpen = true
+                            showFinalLeaveDialog = false
+                        }) {
                             Icon(Icons.Default.ExitToApp, contentDescription = "Zapusti", tint = DrajvRed)
                         }
                     }

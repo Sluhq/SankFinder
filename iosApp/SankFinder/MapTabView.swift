@@ -19,6 +19,7 @@ struct MapTabView: View {
     @State private var selectedBar: Lokal?
     @State private var activeRoute: OsrmRoute?
     @State private var currentStepIndex: Int = 0
+    @State private var distanceToNextStep: Double = 0.0
     @State private var isLoading: Bool = false
     @State private var errorMessage: String?
     @State private var showAddedToHistoryAlert: Bool = false
@@ -181,20 +182,19 @@ struct MapTabView: View {
                 refreshBars()
             }
         }
-        .onChange(of: locationManager.location?.latitude) { _ in
-            if let loc = locationManager.location {
-                SquadManager.shared.updateLocation(lat: loc.latitude, lon: loc.longitude)
-                if !hasInitialCenteredOnUser {
-                    hasInitialCenteredOnUser = true
-                    centerCoord = loc
-                    centerTrigger = UUID()
-                    refreshBars()
-                }
-                
-                // Posodobi Live Lock Screen obvestilo in Apple Watch prikaz
-                if let route = activeRoute, let target = selectedBar ?? bridge.targetLokalForNavigation {
-                    updateLiveNavigation(userLocation: loc, route: route, target: target)
-                }
+        .onReceive(locationManager.$location) { newLoc in
+            guard let loc = newLoc else { return }
+            SquadManager.shared.updateLocation(lat: loc.latitude, lon: loc.longitude)
+            if !hasInitialCenteredOnUser {
+                hasInitialCenteredOnUser = true
+                centerCoord = loc
+                centerTrigger = UUID()
+                refreshBars()
+            }
+            
+            // Posodobi Live Lock Screen obvestilo in Apple Watch prikaz ter navigacijski korak
+            if let route = activeRoute, let target = selectedBar ?? bridge.targetLokalForNavigation {
+                updateLiveNavigation(userLocation: loc, route: route, target: target)
             }
         }
         .alert(isPresented: $showAddedToHistoryAlert) {
@@ -245,7 +245,9 @@ struct MapTabView: View {
     // MARK: - Zgornji zeleni Turn-by-Turn HUD (#1B5E20)
     private func navigationTurnHud(route: OsrmRoute) -> some View {
         let steps = route.legs?.first?.steps ?? []
-        let currentStep = steps.indices.contains(currentStepIndex) ? steps[currentStepIndex] : steps.first
+        let currentStep = getUpcomingStep(steps: steps)
+        let displayManeuverText = currentStep?.maneuver?.instructionText ?? "Nadaljujte naravnost"
+        let displayDist = max(0, Int(distanceToNextStep > 0 ? distanceToNextStep : (currentStep?.distance ?? route.distance)))
         
         return HStack(spacing: 14) {
             ZStack {
@@ -260,12 +262,12 @@ struct MapTabView: View {
             }
             
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(Int(currentStep?.distance ?? route.distance)) m")
+                Text("\(displayDist) m")
                     .font(.title2)
                     .fontWeight(.black)
                     .foregroundColor(.white)
                 
-                Text(currentStep?.maneuver?.instructionText ?? "Nadaljujte naravnost")
+                Text(displayManeuverText)
                     .font(.subheadline)
                     .fontWeight(.medium)
                     .foregroundColor(.white.opacity(0.95))
@@ -274,7 +276,12 @@ struct MapTabView: View {
             
             Spacer()
             
-            Button(action: { activeRoute = nil; selectedBar = nil }) {
+            Button(action: {
+                activeRoute = nil
+                selectedBar = nil
+                locationManager.setBackgroundMode(active: false)
+                LiveNavigationManager.shared.stopNavigation()
+            }) {
                 Image(systemName: "xmark")
                     .font(.headline)
                     .foregroundColor(.white)
@@ -477,6 +484,16 @@ struct MapTabView: View {
                     self.currentStepIndex = 0
                     self.isLoading = false
                     self.locationManager.setBackgroundMode(active: true)
+                    
+                    let steps = route.legs?.first?.steps ?? []
+                    let upcoming = self.getUpcomingStep(steps: steps)
+                    if let loc = upcoming?.maneuver?.location, loc.count >= 2 {
+                        let maneuverCoord = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
+                        self.distanceToNextStep = self.distanceBetweenCoords(userPos, maneuverCoord)
+                    } else {
+                        self.distanceToNextStep = upcoming?.distance ?? route.distance
+                    }
+                    
                     let eta = self.calculateEta(durationSeconds: route.duration)
                     LiveNavigationManager.shared.startNavigation(
                         targetName: bar.name,
@@ -493,45 +510,63 @@ struct MapTabView: View {
         }
     }
     
+    private func getUpcomingStep(steps: [OsrmStep]) -> OsrmStep? {
+        guard !steps.isEmpty else { return nil }
+        let upcomingIdx = currentStepIndex + 1
+        return upcomingIdx < steps.count ? steps[upcomingIdx] : steps.last
+    }
+    
     private func updateLiveNavigation(userLocation: CLLocationCoordinate2D, route: OsrmRoute, target: Lokal) {
         let steps = route.legs?.first?.steps ?? []
         guard !steps.isEmpty else { return }
         
-        // 1. Dinamično napredovanje naslednjega koraka ob približanju ovinku (< 18m)
-        let nextIdx = currentStepIndex + 1
-        if nextIdx < steps.count {
-            let nextStep = steps[nextIdx]
-            if let loc = nextStep.maneuver?.location, loc.count >= 2 {
+        // 1. Preveri razdaljo do končnega cilja
+        let destCoord = target.coordinate
+        let distToGoal = distanceBetweenCoords(userLocation, destCoord)
+        if distToGoal <= 15.0 {
+            // Cilj dosežen
+            self.distanceToNextStep = 0.0
+            LiveNavigationManager.shared.stopNavigation()
+            return
+        }
+        
+        // 2. Dinamično napredovanje naslednjega koraka ob približanju ovinku (< 20m) ali rezanju ovinka
+        let upcomingIdx = currentStepIndex + 1
+        if upcomingIdx < steps.count {
+            let upcomingStep = steps[upcomingIdx]
+            if let loc = upcomingStep.maneuver?.location, loc.count >= 2 {
                 let maneuverCoord = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
-                let distToManeuver = distanceBetweenCoords(userLocation, maneuverCoord)
+                let distToUpcoming = distanceBetweenCoords(userLocation, maneuverCoord)
+                self.distanceToNextStep = distToUpcoming
                 
-                var shouldAdvance = distToManeuver <= 18.0
-                if !shouldAdvance && nextIdx + 1 < steps.count {
-                    if let nextNextLoc = steps[nextIdx + 1].maneuver?.location, nextNextLoc.count >= 2 {
+                var shouldAdvance = distToUpcoming <= 20.0
+                if !shouldAdvance && upcomingIdx + 1 < steps.count {
+                    if let nextNextLoc = steps[upcomingIdx + 1].maneuver?.location, nextNextLoc.count >= 2 {
                         let nextNextCoord = CLLocationCoordinate2D(latitude: nextNextLoc[1], longitude: nextNextLoc[0])
                         let distToNextNext = distanceBetweenCoords(userLocation, nextNextCoord)
-                        if distToNextNext < nextStep.distance * 0.85 && distToManeuver < 35.0 {
+                        let stepDistance = upcomingStep.distance
+                        if distToNextNext < stepDistance * 0.85 && distToUpcoming < 40.0 {
                             shouldAdvance = true
                         }
                     }
                 }
+                
                 if shouldAdvance {
-                    self.currentStepIndex = nextIdx
+                    self.currentStepIndex = upcomingIdx
+                    // Nemudoma posodobi razdaljo do novega naslednjega manevra
+                    let newUpcoming = getUpcomingStep(steps: steps)
+                    if let newLoc = newUpcoming?.maneuver?.location, newLoc.count >= 2 {
+                        let newCoord = CLLocationCoordinate2D(latitude: newLoc[1], longitude: newLoc[0])
+                        self.distanceToNextStep = distanceBetweenCoords(userLocation, newCoord)
+                    }
                 }
             }
-        }
-        
-        let currentStep = (steps.indices.contains(currentStepIndex)) ? steps[currentStepIndex] : steps.first
-        let instruction = currentStep?.maneuver?.instructionText ?? "Nadaljujte naravnost"
-        
-        // 2. Izračun točne razdalje do naslednjega manevra
-        let stepDist: Double
-        if let loc = currentStep?.maneuver?.location, loc.count >= 2 {
-            let targetManeuver = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
-            stepDist = distanceBetweenCoords(userLocation, targetManeuver)
         } else {
-            stepDist = currentStep?.distance ?? 50.0
+            self.distanceToNextStep = distToGoal
         }
+        
+        let currentUpcoming = getUpcomingStep(steps: steps)
+        let instruction = currentUpcoming?.maneuver?.instructionText ?? "Nadaljujte naravnost"
         
         // 3. Točen izračun preostale razdalje po dejanski OSRM trasi
         let remaining = calculateRemainingRouteDistance(userLoc: userLocation, routeCoords: route.coordinates)
@@ -540,7 +575,7 @@ struct MapTabView: View {
         LiveNavigationManager.shared.updateNavigation(
             targetName: target.name,
             maneuverInstruction: instruction,
-            distanceToManeuver: stepDist,
+            distanceToManeuver: self.distanceToNextStep,
             remainingDistance: remaining,
             etaFormatted: eta
         )

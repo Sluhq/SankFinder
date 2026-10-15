@@ -672,14 +672,15 @@ struct CustomMapView: UIViewRepresentable {
             context.coordinator.lastRouteCount = 0
         }
         
-        // 2. Posodobitev dinamične UKRIVLJENE navigacijske puščice na cestišču za trenutni zavoj (100% kot Android)
+        // 2. Posodobitev dinamične UKRIVLJENE navigacijske puščice na cestišču za prihajajoči zavoj (100% kot Android)
         let existingCurvedManeuvers = uiView.annotations.compactMap { $0 as? CurvedManeuverAnnotation }
         uiView.removeAnnotations(existingCurvedManeuvers)
         
         if !routeCoordinates.isEmpty && !routeSteps.isEmpty {
-            let stepIdx = routeSteps.indices.contains(currentStepIndex) ? currentStepIndex : 0
-            let step = routeSteps[stepIdx]
-            if let loc = step.maneuver?.location, loc.count >= 2 {
+            let upcomingIdx = (currentStepIndex + 1 < routeSteps.count) ? (currentStepIndex + 1) : (routeSteps.count - 1)
+            let step = routeSteps[upcomingIdx]
+            let isArrive = step.maneuver?.type?.lowercased() == "arrive"
+            if !isArrive, let loc = step.maneuver?.location, loc.count >= 2 {
                 let geo = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
                 
                 var bestIdx = -1
