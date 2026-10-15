@@ -177,10 +177,15 @@ class OSMTileOverlay: MKTileOverlay {
 7. **Dinamično sledenje korakom navigacije (< 18 m) & Razdalja po cesti:**  
    - Ko se uporabnik med peš navigacijo približa naslednjemu manevru na manj kot **18 metrov**, aplikacija v `MapTabView.swift` samodejno preskoči na naslednji korak (`currentStepIndex += 1`).
    - Preostala razdalja se ne računa kot zračna razdalja, temveč z namensko funkcijo `calculateRemainingRouteDistance` vzdolž **dejanskih koordinat OSRM polilinije**.
-8. **Plavajoči kompas za poravnavo proti severu:**  
+8. **Avtomatska rotacija in zvezno sledenje kamere (Google Maps Course-Up slog):**  
+   - Ob zagonu navigacije se `MKMapCamera` avtomatsko nastavi na uporabnikovo lokacijo s peš razdaljo (`fromDistance = 320.0 m`) ter zasuče v smer začetnega odseka poti (`initialBearing`).
+   - Med hojo kamera zvezno sledi uporabniku v središču zaslona (`isFollowingUser = true`), usmerjenost pa se dinamično prilagaja smeri ceste/gibanja (`MKMapCamera.heading`), tako da je pot pred nami vedno zgoraj.
+   - Če uporabnik med navigacijo ročno podrsne po zemljevidu (`UIPanGestureRecognizer`), se samodejno sledenje začasno ustavi in prikaže se plavajoči gumb **"Centriraj"**. S klikom nanj se kamera takoj znova zaklene na uporabnika in zasuče v smer hoje.
+   - Ob prekinitvi navigacije ("Končaj" ali "X") se kamera zvezno poravna nazaj na sever (`heading = 0.0`) ter povrne običajen pregled.
+9. **Plavajoči kompas za poravnavo proti severu:**  
    - Ko se zemljevid zasuče (`abs(mapHeading) > 5.0°`), se v zgornjem desnem delu prikaže plavajoči kompas.
    - Igla kompasa se v realnem času natančno vrti proti severu. Ob dotiku se kamera zemljevida z gladko animacijo poravna na sever (`heading = 0.0`).
-9. **Centralna sinhronizacija radija in limita (Nastavitve):**  
+10. **Centralna sinhronizacija radija in limita (Nastavitve):**  
    - Radij iskanja (`1 km`, `2 km`, `3 km`, `5 km`) in limit lokalov sta centralno povezana prek `@AppStorage("defaultRadiusKm")` in `@AppStorage("lokalLimit")`.
    - Zgornji del zemljevida je razbremenjen podvojenih menijev, seznam ([BarsListView.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/BarsListView.swift)) in zemljevid ([MapTabView.swift](file:///c:/Android/SankFinder/iosApp/SankFinder/MapTabView.swift)) pa se ob spremembi v Nastavitvah samodejno in reaktivno ponovno naložita.
 

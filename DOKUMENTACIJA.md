@@ -148,7 +148,13 @@ Navigacija je centralizirana v [AppNavHost.kt](file:///c:/Android/SankFinder/app
   2. `MapNavigationViewModel.calculateRoute()` pošlje koordinati uporabnika in cilja na primarni OSRM strežnik (`https://sankfinder.sluga.me/`). Če ta vrne napako (npr. HTTP 530 ali omrežno napako), aplikacija samodejno preklopi na rezervni OSRM (`https://routing.openstreetmap.de/`).
   3. Pot se izriše kot debela smaragdno zelena linija (`#0F9D58`) z zunanjo belo obrobo (casing) za optimalno vidljivost na svetli in temni podlagi (enako kot na iOS in usklajeno s smernimi puščicami).
   4. Na vsakem ovinku se prikaže usmerjevalna puščica s točno razdaljo do naslednjega manevra. Ko je uporabnik manj kot 18 m od točke manevra (ali bližje naslednjemu segmentu), se korak nemudoma posodobi brez zatikanja.
-  5. Ob rotaciji zemljevida se prikaže plavajoči kompas, ki s klikom poravna zemljevid nazaj proti severu.
+  5. **Avtomatska rotacija in zvezno sledenje kamere (Google Maps Course-Up slog):**
+     - Ob začetku navigacije se kamera samodejno približa na peš povečavo (`zoom = 18.5`) in zasuče v smer začetka poti.
+     - Med hojo kamera zvezno sledi uporabniku, tako da je modra pika vedno natančno v središču zaslona.
+     - Smer ceste je vedno obrnjena navzgor ("Heading-Up"), smerna puščica pa kaže naravnost naprej. Ob ovinkih se zemljevid samodejno in gladko zasuče vzdolž cestišča.
+     - Če uporabnik med vodenjem ročno podrsne ali zavrti zemljevid, se avtomatsko sledenje začasno ustavi in prikaže se plavajoči gumb **"Centriraj"**. Dotik nanj takoj obnovi usmerjenost in osredotočenje na uporabnika.
+     - Ob zaključku navigacije ("Končaj" ali "X") se kamera z gladko animacijo poravna nazaj na sever (`orientation = 0°`).
+  6. Ob ročni rotaciji zemljevida se prikaže plavajoči kompas, ki s klikom poravna zemljevid nazaj proti severu.
 
 ### 5.2 Zavihek "Orodja" (Šank Orodja Hub)
 - **Datoteka:** [GamesPage.kt](file:///c:/Android/SankFinder/app/src/main/java/com/example/sankfinder/ui/pages/GamesPage.kt)
