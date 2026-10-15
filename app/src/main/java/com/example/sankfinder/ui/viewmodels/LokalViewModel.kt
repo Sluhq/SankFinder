@@ -35,7 +35,13 @@ class LokalViewModel : ViewModel() {
         Lokal("Sax Pub", "Eipprova ulica 7, 1000 Ljubljana", 46.0435, 14.5029, "Jazz Pub", "+386 1 425 01 54", null, "Mo-Su 09:00-01:00"),
         Lokal("Pritličje", "Mestni trg 25, 1000 Ljubljana", 46.0498, 14.5072, "Bar, Club", "+386 1 425 04 44", null, "Mo-Su 09:00-01:00"),
         Lokal("Daktari", "Krekov trg 7, 1000 Ljubljana", 46.0515, 14.5103, "Cafe, Bar", "+386 1 433 01 80", null, "Mo-Su 08:00-01:00"),
-        Lokal("BiKoFe", "Židovska steza 2, 1000 Ljubljana", 46.0496, 14.5048, "Bar", "+386 1 251 12 00", null, "Mo-Su 08:00-00:00")
+        Lokal("BiKoFe", "Židovska steza 2, 1000 Ljubljana", 46.0496, 14.5048, "Bar", "+386 1 251 12 00", null, "Mo-Su 08:00-00:00"),
+        // Šiška & Bežigrad
+        Lokal("Gostilna Maratonec", "Podmilščakova ulica 24, 1000 Ljubljana", 46.0712, 14.5048, "Gostilna, Bar", "+386 1 436 43 28", null, "Mo-Fr 08:00-22:00"),
+        Lokal("Bar trikotnik", "Podmilščakova ulica 46, 1000 Ljubljana", 46.0754, 14.5019, "Bar, Kava", null, null, "Mo-Sa 07:00-23:00"),
+        Lokal("Pivnica Union", "Celovška cesta 22, 1000 Ljubljana", 46.0597, 14.4983, "Pivnica, Bar", "+386 1 475 70 00", "https://pivnica-union.si", "Mo-Sa 11:00-24:00"),
+        Lokal("Kavarna Tiskarna", "Dunajska cesta 123, 1000 Ljubljana", 46.0772, 14.5126, "Bar, Cafe, Burger", "+386 40 435 554", null, "Mo-Fr 07:30-23:00, Sa 09:00-23:00"),
+        Lokal("Lepotica in Zver Bar", "Drenikova ulica 18, 1000 Ljubljana", 46.0701, 14.4965, "Bar, Pub", "+386 41 332 211", null, "Mo-Su 08:00-24:00")
     )
 
     private var _preferredLimit: Int = 20

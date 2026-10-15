@@ -10,15 +10,13 @@ struct BarsListView: View {
     @AppStorage("defaultRadiusKm") private var selectedRadiusKm: Int = 2
     @AppStorage("lokalLimit") private var selectedLokalLimit: Int = 25
     
-    @State private var bars: [Lokal] = []
     @State private var searchQuery: String = ""
-    @State private var isLoading: Bool = false
     @State private var selectedFilter: Int = 0 // 0: Vsi, 1: Samo odprto zdaj
     @State private var lastRefreshTime: String = "Pravkar"
     @State private var toastMessage: String? = nil
     
     var filteredBars: [Lokal] {
-        var list = bars
+        var list = network.bars
         if selectedFilter == 1 {
             list = list.filter { $0.isOpenNow }
         }
@@ -85,7 +83,7 @@ struct BarsListView: View {
                     
                     // Filter: Vsi vs Samo odprto zdaj
                     HStack(spacing: 8) {
-                        MaterialFilterChip(title: "Vsi šanki (\(bars.count))", isSelected: selectedFilter == 0) {
+                        MaterialFilterChip(title: "Vsi šanki (\(network.bars.count))", isSelected: selectedFilter == 0) {
                             selectedFilter = 0
                         }
                         
@@ -97,11 +95,23 @@ struct BarsListView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 4)
+                    
+                    if let warning = network.warningMessage {
+                        HStack(spacing: 6) {
+                            Image(systemName: "wifi.slash")
+                                .font(.caption2)
+                            Text(warning)
+                                .font(.caption2)
+                        }
+                        .foregroundColor(Theme.beerGold)
+                        .padding(.horizontal, 16)
+                        .padding(.top, 4)
+                    }
                 }
                 .padding(.bottom, 6)
                 
                 // 3. SEZNAM LOKALOV (Material 3 Kartice)
-                if isLoading {
+                if network.isLoadingBars && network.bars.isEmpty {
                     Spacer()
                     VStack(spacing: 12) {
                         ProgressView()
@@ -180,13 +190,15 @@ struct BarsListView: View {
         .onAppear {
             GlobalSyncManager.shared.reportScreen("Seznam lokalov")
             locationManager.requestPermission()
-            if locationManager.hasRealLocation || bars.isEmpty {
+            if network.bars.isEmpty {
                 loadBars()
             }
         }
-        .onChange(of: locationManager.hasRealLocation) { hasReal in
-            if hasReal {
-                loadBars()
+        .onReceive(locationManager.$location) { newLoc in
+            if let loc = newLoc {
+                if network.bars.isEmpty || (network.lastFetchedCoord == nil) {
+                    loadBars()
+                }
             }
         }
         .onChange(of: selectedRadiusKm) { _ in
@@ -383,28 +395,16 @@ struct BarsListView: View {
     }
     
     private func loadBars() {
-        isLoading = true
         let userPos = locationManager.location ?? LocationManager.defaultCoordinate
-        Task {
-            do {
-                let fetched = try await network.fetchNearbyBars(
-                    lat: userPos.latitude,
-                    lon: userPos.longitude,
-                    radius: selectedRadiusKm * 1000,
-                    limit: selectedLokalLimit
-                )
-                DispatchQueue.main.async {
-                    self.bars = fetched
-                    let formatter = DateFormatter()
-                    formatter.dateFormat = "HH:mm"
-                    self.lastRefreshTime = formatter.string(from: Date())
-                    self.isLoading = false
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.isLoading = false
-                }
-            }
-        }
+        network.loadBars(
+            lat: userPos.latitude,
+            lon: userPos.longitude,
+            radius: selectedRadiusKm * 1000,
+            limit: selectedLokalLimit,
+            force: true
+        )
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm"
+        self.lastRefreshTime = formatter.string(from: Date())
     }
 }

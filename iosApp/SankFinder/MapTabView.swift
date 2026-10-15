@@ -15,7 +15,7 @@ struct MapTabView: View {
     @State private var centerCoord: CLLocationCoordinate2D?
     @State private var centerTrigger: UUID = UUID()
     @State private var hasInitialCenteredOnUser: Bool = false
-    @State private var bars: [Lokal] = []
+    @State private var hasAccurateCenter: Bool = false
     @State private var selectedBar: Lokal?
     @State private var activeRoute: OsrmRoute?
     @State private var currentStepIndex: Int = 0
@@ -34,7 +34,7 @@ struct MapTabView: View {
                 userHeading: locationManager.heading,
                 mapHeading: $mapHeading,
                 resetHeadingTrigger: resetHeadingTrigger,
-                bars: bars,
+                bars: network.bars,
                 squadMembers: squad.members,
                 selectedLokal: selectedBar,
                 routeCoordinates: activeRoute?.coordinates ?? [],
@@ -137,7 +137,7 @@ struct MapTabView: View {
                 }
             }
             
-            if isLoading {
+            if network.isLoadingBars && network.bars.isEmpty {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .beerGold))
                     .scaleEffect(1.4)
@@ -150,15 +150,19 @@ struct MapTabView: View {
             GlobalSyncManager.shared.reportScreen("Zemljevid & Šanki")
             locationManager.requestPermission()
             
-            // Če je GPS lokacija že znana, takoj postavi kamero na uporabnika in poišči šanke okoli njega
             if let loc = locationManager.location, locationManager.hasRealLocation {
-                hasInitialCenteredOnUser = true
                 centerCoord = loc
                 centerTrigger = UUID()
-                refreshBars()
+                if locationManager.accuracy > 0 && locationManager.accuracy <= 65.0 {
+                    hasAccurateCenter = true
+                }
+                network.loadBars(lat: loc.latitude, lon: loc.longitude, radius: selectedRadiusKm * 1000, limit: selectedLokalLimit)
             } else {
-                // Če GPS še pridobiva signal, počakamo na didUpdateLocations, da se kamera ne postavlja napačno v center Ljubljane
                 locationManager.startUpdating()
+                if network.bars.isEmpty {
+                    let fallback = LocationManager.defaultCoordinate
+                    network.loadBars(lat: fallback.latitude, lon: fallback.longitude, radius: selectedRadiusKm * 1000, limit: selectedLokalLimit)
+                }
             }
             
             if let target = bridge.targetLokalForNavigation {
@@ -174,22 +178,28 @@ struct MapTabView: View {
                 bridge.targetLokalForNavigation = nil
             }
         }
-        .onChange(of: locationManager.hasRealLocation) { hasReal in
-            if hasReal, let loc = locationManager.location, !hasInitialCenteredOnUser {
-                hasInitialCenteredOnUser = true
-                centerCoord = loc
-                centerTrigger = UUID()
-                refreshBars()
-            }
-        }
         .onReceive(locationManager.$location) { newLoc in
             guard let loc = newLoc else { return }
             SquadManager.shared.updateLocation(lat: loc.latitude, lon: loc.longitude)
-            if !hasInitialCenteredOnUser {
+            
+            let isAccurate = (locationManager.accuracy > 0 && locationManager.accuracy <= 65.0)
+            if !hasInitialCenteredOnUser || (!hasAccurateCenter && isAccurate) {
                 hasInitialCenteredOnUser = true
+                if isAccurate {
+                    hasAccurateCenter = true
+                }
                 centerCoord = loc
                 centerTrigger = UUID()
-                refreshBars()
+                network.loadBars(lat: loc.latitude, lon: loc.longitude, radius: selectedRadiusKm * 1000, limit: selectedLokalLimit)
+            } else {
+                if let last = network.lastFetchedCoord {
+                    let dist = distanceBetweenCoords(loc, last)
+                    if dist > 250.0 {
+                        network.loadBars(lat: loc.latitude, lon: loc.longitude, radius: selectedRadiusKm * 1000, limit: selectedLokalLimit)
+                    }
+                } else {
+                    network.loadBars(lat: loc.latitude, lon: loc.longitude, radius: selectedRadiusKm * 1000, limit: selectedLokalLimit)
+                }
             }
             
             // Posodobi Live Lock Screen obvestilo in Apple Watch prikaz ter navigacijski korak
@@ -437,38 +447,19 @@ struct MapTabView: View {
         if let loc = locationManager.location {
             centerCoord = loc
             centerTrigger = UUID()
-            if bars.isEmpty {
-                refreshBars()
-            }
+            network.loadBars(lat: loc.latitude, lon: loc.longitude, radius: selectedRadiusKm * 1000, limit: selectedLokalLimit, force: true)
         } else {
             locationManager.requestPermission()
-            centerCoord = LocationManager.defaultCoordinate
+            let def = LocationManager.defaultCoordinate
+            centerCoord = def
             centerTrigger = UUID()
+            network.loadBars(lat: def.latitude, lon: def.longitude, radius: selectedRadiusKm * 1000, limit: selectedLokalLimit, force: true)
         }
     }
     
     private func refreshBars() {
-        isLoading = true
         let userPos = locationManager.location ?? LocationManager.defaultCoordinate
-        Task {
-            do {
-                let fetched = try await network.fetchNearbyBars(
-                    lat: userPos.latitude,
-                    lon: userPos.longitude,
-                    radius: selectedRadiusKm * 1000,
-                    limit: selectedLokalLimit
-                )
-                DispatchQueue.main.async {
-                    self.bars = fetched
-                    self.isLoading = false
-                }
-            } catch {
-                DispatchQueue.main.async {
-                    self.errorMessage = error.localizedDescription
-                    self.isLoading = false
-                }
-            }
-        }
+        network.loadBars(lat: userPos.latitude, lon: userPos.longitude, radius: selectedRadiusKm * 1000, limit: selectedLokalLimit, force: true)
     }
     
     private func calculateRoute(to bar: Lokal) {

@@ -9,6 +9,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     static let defaultCoordinate = CLLocationCoordinate2D(latitude: 46.056946, longitude: 14.505751)
     
     @Published var location: CLLocationCoordinate2D? = nil
+    @Published var accuracy: CLLocationAccuracy = -1.0
     @Published var hasRealLocation: Bool = false
     @Published var heading: Double = 0.0
     @Published var isAuthorized: Bool = false
@@ -18,7 +19,8 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         super.init()
         manager.delegate = self
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
-        manager.distanceFilter = 3.0
+        manager.activityType = .fitness
+        manager.distanceFilter = 2.0
         manager.headingFilter = 3.0
         
         // Takoj sproži zahtevo za lokacijo ob zagonu
@@ -79,7 +81,13 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let latest = locations.last else { return }
+        // 1. Zavrzi neveljavne koordinate (negativna natančnost)
+        guard latest.horizontalAccuracy >= 0 else { return }
+        // 2. Zavrzi zelo stare predpomnjene meritve (> 120s)
+        guard abs(latest.timestamp.timeIntervalSinceNow) < 120 else { return }
+        
         DispatchQueue.main.async {
+            self.accuracy = latest.horizontalAccuracy
             self.location = latest.coordinate
             self.hasRealLocation = true
             self.isAuthorized = true
