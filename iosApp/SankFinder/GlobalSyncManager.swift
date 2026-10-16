@@ -172,8 +172,8 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
         let scheme = hostInfo.useSsl ? "wss" : "ws"
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
         let signature = SecureStorage.shared.generateSignature(timestamp: timestamp, deviceId: deviceId)
-        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
-        let encVer = currentVer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "1.2.0"
+        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.1"
+        let encVer = currentVer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "1.2.1"
         let urlString = "\(scheme)://\(hostInfo.host)/ws?clientType=app&deviceId=\(deviceId)&model=\(encModel)&os=\(encOs)&screen=\(encScreen)&version=\(encVer)&t=\(timestamp)&sig=\(signature)"
         
         guard let url = URL(string: urlString) else { return }
@@ -258,9 +258,9 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
                 self.motd = json["message"] as? String
             } else if type == "version_info" || type == "app_version_update" {
                 let verObj = (json["versions"] as? [String: Any]) ?? json
-                let latest = verObj["ios"] as? String ?? verObj["latestIos"] as? String ?? "1.2.0"
+                let latest = verObj["ios"] as? String ?? verObj["latestIos"] as? String ?? "1.2.1"
                 let notes = verObj["notes"] as? String ?? ""
-                let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+                let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.1"
                 self.latestVersion = latest
                 self.versionNotes = notes
                 self.isOutdated = self.isVersionOlder(current: current, latest: latest)

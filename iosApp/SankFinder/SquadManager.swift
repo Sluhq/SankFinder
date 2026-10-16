@@ -418,7 +418,7 @@ class SquadManager: ObservableObject {
                 
             // Strežnik oddaja 'room_closed_by_admin'
             case "room_closed_by_admin":
-                self.leaveSquad()
+                self.leaveRoom()
                 self.errorMessage = "Sobo je administrator zaprl."
                 
             // Strežnik oddaja 'admin_broadcast'

@@ -645,13 +645,10 @@ const server = http.createServer((req, res) => {
             for (const [, dev] of appConnectedClients.entries()) {
                 if (dev.deviceId === devId) { live = dev; break; }
             }
-            const isIos = (d.model + ' ' + d.os_version).toLowerCase().includes('ios') || (d.model + ' ' + d.os_version).toLowerCase().includes('iphone');
-            const target = isIos ? (settingsMap.latest_version_ios || '1.2.0') : (settingsMap.latest_version_android || '1.2.0');
-            const raw = (live && live.appVersion && live.appVersion !== '1.0') ? live.appVersion : d.app_version;
-            const finalVer = (raw && raw !== '1.0' && raw !== '1.0.0') ? raw : target;
+            const rawVer = (live && live.appVersion) ? live.appVersion : (d.app_version || '1.0');
             return {
                 ...d,
-                app_version: finalVer,
+                app_version: rawVer,
                 current_screen: (live && live.currentScreen) ? live.currentScreen : d.current_screen,
                 last_seen: (live && live.lastSeen) ? live.lastSeen : d.last_seen
             };
@@ -1366,12 +1363,7 @@ wss.on('connection', (ws, req) => {
         const deviceId = parsedUrl.query.deviceId || ('dev_' + Math.random().toString(36).substring(2, 9));
         const model = parsedUrl.query.model || 'Pametni telefon';
         const osVersion = parsedUrl.query.os || 'Android';
-        const isIosDevice = (model + ' ' + osVersion).toLowerCase().includes('ios') || (model + ' ' + osVersion).toLowerCase().includes('iphone');
-        const defaultVer = isIosDevice
-            ? (stmtGetSetting.get('latest_version_ios')?.value || '1.2.0')
-            : (stmtGetSetting.get('latest_version_android')?.value || '1.2.0');
-        const rawVer = parsedUrl.query.version || parsedUrl.query.appVersion || parsedUrl.query.v;
-        const appVersion = (rawVer && rawVer !== '1.0' && rawVer !== '1.0.0') ? rawVer : defaultVer;
+        const appVersion = parsedUrl.query.version || parsedUrl.query.appVersion || parsedUrl.query.v || '1.0';
         const screen = parsedUrl.query.screen || 'Glavna stran';
 
         const deviceInfo = {
@@ -2991,8 +2983,7 @@ function renderAdminDashboardHtml() {
         const os = (d.os_version || d.osVersion || '').toLowerCase();
         const isIos = model.includes('ios') || model.includes('iphone') || os.includes('ios');
         const target = isIos ? latestIos : latestAndroid;
-        const rawVer = d.app_version || d.appVersion;
-        const ver = (rawVer && rawVer !== '1.0' && rawVer !== '1.0.0') ? rawVer : target;
+        const ver = (d.app_version || d.appVersion || '1.0');
         return isVersionOlder(ver, target);
       });
       const banner = document.getElementById('version-warning-banner');
@@ -3272,9 +3263,8 @@ function renderAdminDashboardHtml() {
         const model = d.model || 'Neznan model';
         const os = d.os_version || d.osVersion || 'Neznan OS';
         const isIos = (model + ' ' + os).toLowerCase().includes('ios') || (model + ' ' + os).toLowerCase().includes('iphone');
-        const latestTarget = isIos ? (globalData.settings?.latest_version_ios || '1.2.0') : (globalData.settings?.latest_version_android || '1.2.0');
-        const rawAppVer = (liveDev && liveDev.appVersion && liveDev.appVersion !== '1.0') ? liveDev.appVersion : (d.app_version || d.appVersion);
-        const appVer = (rawAppVer && rawAppVer !== '1.0' && rawAppVer !== '1.0.0') ? rawAppVer : latestTarget;
+        const latestTarget = isIos ? (globalData.settings?.latest_version_ios || '1.2.1') : (globalData.settings?.latest_version_android || '1.2.1');
+        const appVer = (liveDev && liveDev.appVersion) ? liveDev.appVersion : (d.app_version || d.appVersion || '1.0');
         const screen = (liveDev ? liveDev.currentScreen : d.current_screen) || 'Zemljevid & Šanki';
         const ip = d.ip || 'unknown';
         const lastSeen = d.last_seen || d.lastSeen;

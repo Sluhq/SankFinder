@@ -69,7 +69,7 @@ object GlobalSyncManager {
     private val _featuredPub = MutableStateFlow<FeaturedPubInfo?>(null)
     val featuredPub: StateFlow<FeaturedPubInfo?> = _featuredPub.asStateFlow()
 
-    private val _latestVersion = MutableStateFlow<String?>("1.2.0")
+    private val _latestVersion = MutableStateFlow<String?>("1.2.1")
     val latestVersion: StateFlow<String?> = _latestVersion.asStateFlow()
 
     private val _isOutdated = MutableStateFlow(false)
@@ -141,11 +141,11 @@ object GlobalSyncManager {
                             }
                             val verObj = json.optJSONObject("versions")
                             if (verObj != null) {
-                                val latest = verObj.optString("android", verObj.optString("latestAndroid", "1.2.0"))
+                                val latest = verObj.optString("android", verObj.optString("latestAndroid", "1.2.1"))
                                 val notes = verObj.optString("notes", "")
                                 _latestVersion.value = latest
                                 _versionNotes.value = notes
-                                val current = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.0" }
+                                val current = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.1" }
                                 _isOutdated.value = isVersionOlder(current, latest)
                             }
                             break
@@ -165,7 +165,7 @@ object GlobalSyncManager {
 
     private fun sendScreenReport(screen: String) {
         try {
-            val appVer = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.0" }
+            val appVer = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.1" }
             val json = JSONObject().apply {
                 put("type", "screen_change")
                 put("screen", screen)
@@ -203,7 +203,7 @@ object GlobalSyncManager {
 
         val hostInfo = hosts[currentHostIndex]
         val scheme = if (hostInfo.second) "wss" else "ws"
-        val appVersion = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.0" }
+        val appVersion = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.1" }
         val url = "$scheme://${hostInfo.first}/ws?clientType=app&deviceId=$deviceId&model=$encodedModel&os=$encodedOs&screen=$encodedScreen&version=$appVersion"
         val request = Request.Builder().url(url).build()
 
@@ -268,11 +268,11 @@ object GlobalSyncManager {
 
                 "version_info", "app_version_update" -> {
                     val verObj = json.optJSONObject("versions") ?: json
-                    val latest = verObj.optString("android", verObj.optString("latestAndroid", "1.2.0"))
+                    val latest = verObj.optString("android", verObj.optString("latestAndroid", "1.2.1"))
                     val notes = verObj.optString("notes", "")
                     _latestVersion.value = latest
                     _versionNotes.value = notes
-                    val current = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.0" }
+                    val current = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.1" }
                     _isOutdated.value = isVersionOlder(current, latest)
                 }
 

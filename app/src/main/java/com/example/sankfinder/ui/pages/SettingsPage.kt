@@ -98,7 +98,7 @@ fun SettingsPage(
     val isOutdated by GlobalSyncManager.isOutdated.collectAsState()
     val latestVersion by GlobalSyncManager.latestVersion.collectAsState()
     val versionNotes by GlobalSyncManager.versionNotes.collectAsState()
-    val currentVersion = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.0" }
+    val currentVersion = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.1" }
 
     LaunchedEffect(Unit) {
         GlobalSyncManager.fetchInitialConfig()
@@ -269,7 +269,7 @@ fun SettingsPage(
                                 )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = "Uporabljate v$currentVersion, na voljo je nova posodobitev v${latestVersion ?: "1.2.0"}. ${versionNotes ?: ""} Prosimo posodobite aplikacijo.",
+                                    text = "Uporabljate v$currentVersion, na voljo je nova posodobitev v${latestVersion ?: "1.2.1"}. ${versionNotes ?: ""} Prosimo posodobite aplikacijo.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
@@ -436,7 +436,7 @@ fun SettingsPage(
                             isApproved = !isOutdated,
                             title = "Različica aplikacije",
                             subtitle = if (isOutdated)
-                                "Zastarela različica (v$currentVersion). Na voljo je nova različica v${latestVersion ?: "1.2.0"}!"
+                                "Zastarela različica (v$currentVersion). Na voljo je nova različica v${latestVersion ?: "1.2.1"}!"
                             else
                                 "Aplikacija je posodobljena. Različica $currentVersion (Najnovejša).",
                             onClick = { showAboutDialog = true }
@@ -690,7 +690,7 @@ fun SettingsPage(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        "Različica: $currentVersion (Zadnja na strežniku: ${latestVersion ?: "1.2.0"})",
+                        "Različica: $currentVersion (Zadnja na strežniku: ${latestVersion ?: "1.2.1"})",
                         fontWeight = FontWeight.SemiBold
                     )
                     if (isOutdated) {
