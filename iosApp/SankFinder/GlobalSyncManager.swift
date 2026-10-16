@@ -158,6 +158,43 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
         sendScreenChange(screen)
     }
     
+    func reportTermsAccepted() {
+        UserDefaults.standard.set(true, forKey: "hasAcceptedTerms")
+        
+        let obj: [String: Any] = [
+            "type": "terms_accepted",
+            "accepted": true,
+            "deviceId": deviceId
+        ]
+        if let data = try? JSONSerialization.data(withJSONObject: obj),
+           let str = String(data: data, encoding: .utf8) {
+            webSocketTask?.send(.string(str)) { _ in }
+        }
+        
+        Task {
+            for host in hosts {
+                let scheme = host.useSsl ? "https" : "http"
+                guard let url = URL(string: "\(scheme)://\(host.host)/api/app/terms/accept") else { continue }
+                var req = URLRequest(url: url)
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
+                let body: [String: Any] = [
+                    "deviceId": deviceId,
+                    "clientType": "ios",
+                    "accepted": true
+                ]
+                req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+                do {
+                    let (_, resp) = try await URLSession.shared.data(for: req)
+                    if let http = resp as? HTTPURLResponse, http.statusCode == 200 {
+                        break
+                    }
+                } catch {}
+            }
+        }
+    }
+    
     private func connect() {
         disconnect()
         
