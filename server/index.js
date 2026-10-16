@@ -3251,8 +3251,8 @@ function renderAdminDashboardHtml() {
         const latestTarget = isIos ? (globalData.settings?.latest_version_ios || '1.2.0') : (globalData.settings?.latest_version_android || '1.2.0');
         const isOld = isVersionOlder(appVer, latestTarget);
         const versionBadge = isOld
-          ? \`<span class="badge-tag" style="background:var(--red-bg); color:var(--red); border-color:rgba(239,68,68,0.4);" title="Zastarela različica! Zadnja uradna je v\\${latestTarget}">v\\${escapeHtml(appVer)} (Zastarela)</span>\`
-          : \`<span class="badge-tag" style="background:var(--green-bg); color:var(--green); border-color:rgba(16,185,129,0.3);">v\\${escapeHtml(appVer)} (Zadnja)</span>\`;
+          ? ('<span class="badge-tag" style="background:var(--red-bg); color:var(--red); border-color:rgba(239,68,68,0.4);" title="Zastarela različica! Zadnja uradna je v' + latestTarget + '">v' + escapeHtml(appVer) + ' (Zastarela)</span>')
+          : ('<span class="badge-tag" style="background:var(--green-bg); color:var(--green); border-color:rgba(16,185,129,0.3);">v' + escapeHtml(appVer) + ' (Zadnja)</span>');
 
         let screenColor = 'var(--blue)';
         if (screen.includes('Zemljevid') || screen.includes('Šank')) screenColor = 'var(--green)';
@@ -3679,7 +3679,7 @@ function renderAdminDashboardHtml() {
 
     function escapeJs(str) {
       if (!str) return '';
-      return String(str).replace(/'/g, "\\\\'").replace(/"/g, '\\"');
+      return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"');
     }
 
     function formatTime(isoStr) {
