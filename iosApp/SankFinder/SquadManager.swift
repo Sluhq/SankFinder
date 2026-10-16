@@ -410,6 +410,25 @@ class SquadManager: ObservableObject {
                     self.bannerAlert = "\(name) prihaja v \(target) čez \(eta) min."
                 }
                 
+            // Strežnik oddaja 'message_deleted' ob izbrisu sporočila na nadzorni plošči
+            case "message_deleted":
+                if let delId = (json["id"] as? NSNumber)?.int64Value ?? (json["id"] as? Int64) ?? (json["id"] as? Int).map({ Int64($0) }) {
+                    self.messages.removeAll(where: { $0.id == delId })
+                }
+                
+            // Strežnik oddaja 'room_closed_by_admin'
+            case "room_closed_by_admin":
+                self.leaveSquad()
+                self.errorMessage = "Sobo je administrator zaprl."
+                
+            // Strežnik oddaja 'admin_broadcast'
+            case "admin_broadcast":
+                let title = json["title"] as? String ?? "Obvestilo uprave"
+                let msg = json["message"] as? String ?? ""
+                if !msg.isEmpty {
+                    self.bannerAlert = "\(title): \(msg)"
+                }
+                
             default:
                 break
             }

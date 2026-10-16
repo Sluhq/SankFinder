@@ -69,6 +69,32 @@ object GlobalSyncManager {
     private val _featuredPub = MutableStateFlow<FeaturedPubInfo?>(null)
     val featuredPub: StateFlow<FeaturedPubInfo?> = _featuredPub.asStateFlow()
 
+    private val _latestVersion = MutableStateFlow<String?>("1.2.0")
+    val latestVersion: StateFlow<String?> = _latestVersion.asStateFlow()
+
+    private val _isOutdated = MutableStateFlow(false)
+    val isOutdated: StateFlow<Boolean> = _isOutdated.asStateFlow()
+
+    private val _versionNotes = MutableStateFlow<String?>("")
+    val versionNotes: StateFlow<String?> = _versionNotes.asStateFlow()
+
+    fun isVersionOlder(current: String, latest: String): Boolean {
+        return try {
+            val currParts = current.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+            val latestParts = latest.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
+            val maxLen = maxOf(currParts.size, latestParts.size)
+            for (i in 0 until maxLen) {
+                val c = currParts.getOrElse(i) { 0 }
+                val l = latestParts.getOrElse(i) { 0 }
+                if (c < l) return true
+                if (c > l) return false
+            }
+            false
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     fun init(context: Context) {
         if (isStarted) return
         isStarted = true
@@ -87,7 +113,7 @@ object GlobalSyncManager {
         startSyncLoop()
     }
 
-    private fun fetchInitialConfig() {
+    fun fetchInitialConfig() {
         scope.launch {
             for (hostInfo in hosts) {
                 try {
@@ -112,6 +138,15 @@ object GlobalSyncManager {
                                     lon = lonVal,
                                     note = pubObj.optString("note", "")
                                 )
+                            }
+                            val verObj = json.optJSONObject("versions")
+                            if (verObj != null) {
+                                val latest = verObj.optString("android", verObj.optString("latestAndroid", "1.2.0"))
+                                val notes = verObj.optString("notes", "")
+                                _latestVersion.value = latest
+                                _versionNotes.value = notes
+                                val current = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.0" }
+                                _isOutdated.value = isVersionOlder(current, latest)
                             }
                             break
                         }
@@ -166,7 +201,8 @@ object GlobalSyncManager {
 
         val hostInfo = hosts[currentHostIndex]
         val scheme = if (hostInfo.second) "wss" else "ws"
-        val url = "$scheme://${hostInfo.first}/ws?clientType=app&deviceId=$deviceId&model=$encodedModel&os=$encodedOs&screen=$encodedScreen&version=1.0"
+        val appVersion = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.0" }
+        val url = "$scheme://${hostInfo.first}/ws?clientType=app&deviceId=$deviceId&model=$encodedModel&os=$encodedOs&screen=$encodedScreen&version=$appVersion"
         val request = Request.Builder().url(url).build()
 
         try {
@@ -226,6 +262,16 @@ object GlobalSyncManager {
                 "motd" -> {
                     val msg = json.optString("message", "")
                     _motd.value = if (msg.isBlank()) null else msg
+                }
+
+                "version_info", "app_version_update" -> {
+                    val verObj = json.optJSONObject("versions") ?: json
+                    val latest = verObj.optString("android", verObj.optString("latestAndroid", "1.2.0"))
+                    val notes = verObj.optString("notes", "")
+                    _latestVersion.value = latest
+                    _versionNotes.value = notes
+                    val current = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.0" }
+                    _isOutdated.value = isVersionOlder(current, latest)
                 }
 
                 "featured_pub" -> {

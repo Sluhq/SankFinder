@@ -20,6 +20,11 @@ struct SettingsView: View {
     @State private var showCustomLimitModal: Bool = false
     @State private var customLimitInput: String = ""
     
+    @ObservedObject private var globalSync = GlobalSyncManager.shared
+    private var currentVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+    }
+    
     var body: some View {
         ZStack {
             Theme.bgDark.edgesIgnoringSafeArea(.all)
@@ -30,6 +35,30 @@ struct SettingsView: View {
                 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
+                        // OPOZORILO: ZASTARELA RAZLIČICA APLIKACIJE
+                        if globalSync.isOutdated {
+                            HStack(spacing: 12) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.system(size: 24))
+                                    .foregroundColor(Theme.drajvRed)
+                                
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Opozorilo: Stara različica aplikacije")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundColor(Theme.drajvRed)
+                                    Text("Uporabljate v\(currentVersion), na voljo je nova posodobitev v\(globalSync.latestVersion). Prosimo posodobite aplikacijo.")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.white.opacity(0.9))
+                                }
+                            }
+                            .padding(14)
+                            .background(Theme.drajvRed.opacity(0.18))
+                            .cornerRadius(12)
+                            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.drajvRed.opacity(0.5), lineWidth: 1))
+                            .padding(.horizontal, 16)
+                            .padding(.top, 10)
+                        }
+
                         // 1. ZVOČNA OPOZORILA (DRAJV rdeče stikalo)
                         HStack {
                             VStack(alignment: .leading, spacing: 3) {
@@ -102,8 +131,10 @@ struct SettingsView: View {
                                 
                                 diagnosticItem(
                                     title: "Različica aplikacije",
-                                    subtitle: "Aplikacija je posodobljena. Različica 1.2.0 (Build 36).",
-                                    isApproved: true
+                                    subtitle: globalSync.isOutdated
+                                        ? "Zastarela različica (v\(currentVersion)). Na voljo je nova v\(globalSync.latestVersion)!"
+                                        : "Aplikacija je posodobljena. Različica \(currentVersion) (Najnovejša).",
+                                    isApproved: !globalSync.isOutdated
                                 )
                                 
                                 Divider().background(Color.white.opacity(0.08)).padding(.leading, 14)
@@ -241,6 +272,7 @@ struct SettingsView: View {
         }
         .onAppear {
             GlobalSyncManager.shared.reportScreen("Nastavitve")
+            GlobalSyncManager.shared.checkVersionConfig()
             refreshDiagnostics()
         }
     }

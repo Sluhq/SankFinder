@@ -15,6 +15,41 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
     @Published var lastAnnouncement: String?
     @Published var activePushAlert: PushEvent?
     @Published var motd: String?
+    @Published var latestVersion: String = "1.2.0"
+    @Published var isOutdated: Bool = false
+    @Published var versionNotes: String = ""
+    
+    func isVersionOlder(current: String, latest: String) -> Bool {
+        let currParts = current.split(separator: ".").compactMap { Int($0.filter { $0.isNumber }) }
+        let latestParts = latest.split(separator: ".").compactMap { Int($0.filter { $0.isNumber }) }
+        let maxLen = max(currParts.count, latestParts.count)
+        for i in 0..<maxLen {
+            let c = i < currParts.count ? currParts[i] : 0
+            let l = i < latestParts.count ? latestParts[i] : 0
+            if c < l { return true }
+            if c > l { return false }
+        }
+        return false
+    }
+    
+    func checkVersionConfig() {
+        guard let url = URL(string: "https://sankfinder.sluga.me/api/app/config") else { return }
+        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            guard let self = self, let data = data,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+            
+            let versions = json["versions"] as? [String: Any]
+            let latest = versions?["ios"] as? String ?? versions?["latestIos"] as? String ?? "1.2.0"
+            let notes = versions?["notes"] as? String ?? ""
+            let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+            
+            DispatchQueue.main.async {
+                self.latestVersion = latest
+                self.versionNotes = notes
+                self.isOutdated = self.isVersionOlder(current: current, latest: latest)
+            }
+        }.resume()
+    }
     
     private var webSocketTask: URLSessionWebSocketTask?
     private lazy var urlSession: URLSession = {
@@ -101,6 +136,7 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
                 print("Dovoljenje za obvestila na iOS: \(error.localizedDescription)")
             }
         }
+        checkVersionConfig()
         connect()
     }
     
@@ -134,7 +170,9 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
         let scheme = hostInfo.useSsl ? "wss" : "ws"
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
         let signature = SecureStorage.shared.generateSignature(timestamp: timestamp, deviceId: deviceId)
-        let urlString = "\(scheme)://\(hostInfo.host)/ws?clientType=app&deviceId=\(deviceId)&model=\(encModel)&os=\(encOs)&screen=\(encScreen)&version=1.0&t=\(timestamp)&sig=\(signature)"
+        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+        let encVer = currentVer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "1.2.0"
+        let urlString = "\(scheme)://\(hostInfo.host)/ws?clientType=app&deviceId=\(deviceId)&model=\(encModel)&os=\(encOs)&screen=\(encScreen)&version=\(encVer)&t=\(timestamp)&sig=\(signature)"
         
         guard let url = URL(string: urlString) else { return }
         
@@ -216,6 +254,14 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
                 }
             } else if type == "motd" {
                 self.motd = json["message"] as? String
+            } else if type == "version_info" || type == "app_version_update" {
+                let verObj = (json["versions"] as? [String: Any]) ?? json
+                let latest = verObj["ios"] as? String ?? verObj["latestIos"] as? String ?? "1.2.0"
+                let notes = verObj["notes"] as? String ?? ""
+                let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+                self.latestVersion = latest
+                self.versionNotes = notes
+                self.isOutdated = self.isVersionOlder(current: current, latest: latest)
             }
         }
     }

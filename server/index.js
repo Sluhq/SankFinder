@@ -139,6 +139,14 @@ db.exec(`
   );
 `);
 
+// Privzete nastavitve, če še ne obstajajo
+const stmtInsertDefaultSetting = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
+stmtInsertDefaultSetting.run('motd', 'Dobrodošli v posodobljeni različici ŠankFinder!');
+stmtInsertDefaultSetting.run('latest_version_android', '1.2.0');
+stmtInsertDefaultSetting.run('latest_version_ios', '1.2.0');
+stmtInsertDefaultSetting.run('min_version', '1.0.0');
+stmtInsertDefaultSetting.run('version_update_notes', 'Na voljo je posodobitev z izboljšanim klepetom, brisanjem sporočil in hitrejšo sinhronizacijo.');
+
 // Pripravljeni SQL stavki - Sobe in Klepet
 const stmtInsertRoom = db.prepare('INSERT INTO rooms (id, code, name) VALUES (?, ?, ?)');
 const stmtGetRoomByCode = db.prepare('SELECT * FROM rooms WHERE code = ?');
@@ -837,6 +845,32 @@ const server = http.createServer((req, res) => {
                         }
                     }
                 }
+                if (data.latestVersionAndroid !== undefined) {
+                    stmtSetSetting.run('latest_version_android', String(data.latestVersionAndroid).trim());
+                }
+                if (data.latestVersionIos !== undefined) {
+                    stmtSetSetting.run('latest_version_ios', String(data.latestVersionIos).trim());
+                }
+                if (data.minVersion !== undefined) {
+                    stmtSetSetting.run('min_version', String(data.minVersion).trim());
+                }
+                if (data.versionNotes !== undefined) {
+                    stmtSetSetting.run('version_update_notes', String(data.versionNotes).trim());
+                }
+                if (data.latestVersionAndroid !== undefined || data.latestVersionIos !== undefined) {
+                    const verPayload = JSON.stringify({
+                        type: 'version_info',
+                        android: String(data.latestVersionAndroid || '').trim(),
+                        ios: String(data.latestVersionIos || '').trim(),
+                        minVersion: String(data.minVersion || '').trim(),
+                        notes: String(data.versionNotes || '').trim()
+                    });
+                    for (const [socket] of appConnectedClients.entries()) {
+                        if (socket.readyState === WebSocket.OPEN) {
+                            try { socket.send(verPayload); } catch (e) {}
+                        }
+                    }
+                }
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true, message: 'Nastavitve uspešno posodobljene.' }));
@@ -1176,10 +1210,15 @@ const server = http.createServer((req, res) => {
         }
     }
 
-    // JAVNI API: KONFIGURACIJA IN SANK TEDNA ZA APLIKACIJO
+    // JAVNI API: KONFIGURACIJA IN ŠANK TEDNA ZA APLIKACIJO
     if (pathname === '/api/app/config' && req.method === 'GET') {
         const motdSetting = stmtGetSetting.get('motd');
         const featSetting = stmtGetSetting.get('featured_pub');
+        const verAndroidSetting = stmtGetSetting.get('latest_version_android');
+        const verIosSetting = stmtGetSetting.get('latest_version_ios');
+        const minVerSetting = stmtGetSetting.get('min_version');
+        const verNotesSetting = stmtGetSetting.get('version_update_notes');
+
         let featuredPub = null;
         if (featSetting && featSetting.value) {
             try { featuredPub = JSON.parse(featSetting.value); } catch (e) {}
@@ -1188,10 +1227,34 @@ const server = http.createServer((req, res) => {
         res.end(JSON.stringify({
             success: true,
             motd: motdSetting ? motdSetting.value : null,
-            featuredPub: featuredPub
+            featuredPub: featuredPub,
+            versions: {
+                android: verAndroidSetting ? verAndroidSetting.value : '1.2.0',
+                ios: verIosSetting ? verIosSetting.value : '1.2.0',
+                minVersion: minVerSetting ? minVerSetting.value : '1.0.0',
+                notes: verNotesSetting ? verNotesSetting.value : ''
+            }
         }));
         return;
     }
+
+    // JAVNI API: HITRO PREVERJANJE VERZIJ
+    if (pathname === '/api/app/version' && req.method === 'GET') {
+        const verAndroidSetting = stmtGetSetting.get('latest_version_android');
+        const verIosSetting = stmtGetSetting.get('latest_version_ios');
+        const minVerSetting = stmtGetSetting.get('min_version');
+        const verNotesSetting = stmtGetSetting.get('version_update_notes');
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            success: true,
+            android: verAndroidSetting ? verAndroidSetting.value : '1.2.0',
+            ios: verIosSetting ? verIosSetting.value : '1.2.0',
+            minVersion: minVerSetting ? minVerSetting.value : '1.0.0',
+            notes: verNotesSetting ? verNotesSetting.value : ''
+        }));
+        return;
+    } 
 
     // JAVNI API: USTVARJANJE SOBE (za Pivsko Klapo)
     if (pathname === '/api/rooms/create' && req.method === 'POST') {
@@ -1554,7 +1617,7 @@ function renderAdminDashboardHtml() {
 <html lang="sl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>ŠankFinder | Nadzorni Center</title>
   <link rel="icon" type="image/png" href="/logo.png">
   <link rel="shortcut icon" type="image/png" href="/logo.png">
@@ -2102,6 +2165,115 @@ function renderAdminDashboardHtml() {
       gap: 10px;
       background: #0c1424;
     }
+
+    /* MOBILNA ODZIVNOST ZA PAMETNE TELEFONE */
+    @media (max-width: 768px) {
+      header {
+        padding: 10px 14px;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .brand-title {
+        font-size: 15px;
+      }
+      .status-badge {
+        font-size: 11px;
+        padding: 3px 8px;
+      }
+      #server-uptime {
+        display: none;
+      }
+      .tabs-bar {
+        padding: 0 8px;
+        gap: 2px;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        flex-wrap: nowrap;
+      }
+      .tabs-bar::-webkit-scrollbar {
+        display: none;
+      }
+      .tab-btn {
+        padding: 10px 12px;
+        font-size: 12px;
+        gap: 6px;
+      }
+      .content {
+        padding: 12px 10px;
+      }
+      .stats-row {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+      .stat-card {
+        padding: 12px 10px;
+        border-radius: 10px;
+      }
+      .stat-label {
+        font-size: 10px;
+      }
+      .stat-number {
+        font-size: 20px;
+      }
+      .stat-sub {
+        font-size: 10px;
+      }
+      .panel {
+        padding: 14px;
+        border-radius: 12px;
+        margin-bottom: 14px;
+      }
+      .panel-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+      }
+      .search-input {
+        width: 100%;
+      }
+      #live-radar-map {
+        height: 260px;
+      }
+      .modal {
+        width: 95vw;
+        max-height: 92vh;
+        border-radius: 14px;
+      }
+      .modal-body {
+        grid-template-columns: 1fr;
+        max-height: 400px;
+      }
+      .grid-2 {
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      table {
+        min-width: 580px;
+      }
+    }
+
+    @media (max-width: 480px) {
+      .stats-row {
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      .stat-card {
+        padding: 10px 8px;
+      }
+      .stat-number {
+        font-size: 18px;
+      }
+      .btn {
+        padding: 7px 12px;
+        font-size: 11.5px;
+      }
+      .btn-sm {
+        padding: 5px 9px;
+        font-size: 10.5px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -2160,6 +2332,12 @@ function renderAdminDashboardHtml() {
 
     <!-- ZAVIHEK 1: GLAVNI PREGLED (6 OBOGATENIH KPI KARTIC + LEAFLET LIVE RADAR + STORITVE) -->
     <div class="tab-pane active" id="tab-overview">
+      <!-- OPOZORILO: ZASTARELE RAZLICICE NA TELEFONIH -->
+      <div id="version-warning-banner" style="display:none; margin-bottom:16px; padding:12px 16px; background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); border-radius:12px; align-items:center; gap:12px; flex-wrap:wrap;">
+        <span style="font-weight:800; font-size:12.5px; color:var(--red); text-transform:uppercase; letter-spacing:0.5px;">Opozorilo o zastarelih aplikacijah:</span>
+        <span id="outdated-count-text" style="font-size:12.5px; color:var(--text); flex:1;"></span>
+        <button class="btn btn-sm btn-blue" onclick="switchTab('devices')">Pokaži naprave</button>
+      </div>
       <div class="stats-row">
         <!-- 1. Aktivne naprave v živo -->
         <div class="stat-card">
@@ -2485,6 +2663,38 @@ function renderAdminDashboardHtml() {
           </div>
         </div>
       </div>
+
+      <!-- UPRAVLJANJE RAZLIČIC APLIKACIJE -->
+      <div class="panel" style="margin-top:20px; border-color:rgba(59,130,246,0.3);">
+        <div class="panel-header">
+          <h2 class="panel-title" style="color:#60a5fa;">Nadzor Različic Mobilnih Aplikacij (Android / iOS)</h2>
+        </div>
+        <div style="font-size:13px; color:var(--text-muted); margin-bottom:14px;">
+          Aplikacije ob zagonu in v nastavitvah preverijo te verzije. Če ima uporabnik starejšo, se mu v nastavitvah prikaže opozorilo.
+        </div>
+        <div class="grid-2">
+          <div class="form-group">
+            <label>Zadnja Uradna Različica (Android)</label>
+            <input type="text" class="form-control mono" id="config-ver-android" placeholder="1.2.0">
+          </div>
+          <div class="form-group">
+            <label>Zadnja Uradna Različica (iOS / Apple)</label>
+            <input type="text" class="form-control mono" id="config-ver-ios" placeholder="1.2.0">
+          </div>
+          <div class="form-group">
+            <label>Minimalna Podprta Različica</label>
+            <input type="text" class="form-control mono" id="config-min-version" placeholder="1.0.0">
+          </div>
+          <div class="form-group">
+            <label>Opombe ob Posodobitvi (Sporočilo v nastavitvah)</label>
+            <input type="text" class="form-control" id="config-ver-notes" placeholder="Na voljo je posodobitev z izboljšano varnostjo in novimi funkcijami.">
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
+          <button class="btn btn-green" onclick="saveVersions()">Shrani Nastavitve Različic</button>
+          <span id="version-save-status" style="font-size:12px; font-weight:700; color:#10b981; display:none;">Nastavitve različic uspešno shranjene in oddane napravam!</span>
+        </div>
+      </div>
     </div>
 
   </div>
@@ -2735,9 +2945,35 @@ function renderAdminDashboardHtml() {
       // Telemetrija gateway in baza
       document.getElementById('gateway-telemetry').innerHTML = \`<span style="color:var(--green); font-weight:700;">RAM: \${o.memoryRssMb || 0} MB • \${o.openWebSockets || 0} WS</span>\`;
       
-      const dbMb = ((o.dbSizeBytes || 0) / 1024 / 1024).toFixed(2);
+      const dbBytes = o.dbSizeBytes || 0;
+      const dbStr = dbBytes >= 1048576 
+        ? ((dbBytes / 1048576).toFixed(2) + ' MB') 
+        : (Math.round(dbBytes / 1024) + ' KB');
       const walKb = Math.round((o.walSizeBytes || 0) / 1024);
-      document.getElementById('db-file-sizes').innerText = \`data/squad.db (\${dbMb} MB • WAL: \${walKb} KB)\`;
+      document.getElementById('db-file-sizes').innerText = \`data/squad.db (\${dbStr} • WAL: \${walKb} KB)\`;
+
+      // Preveri zastarele naprave za opozorilno vrstico
+      const latestIos = (globalData.settings && globalData.settings.latest_version_ios) || '1.2.0';
+      const latestAndroid = (globalData.settings && globalData.settings.latest_version_android) || '1.2.0';
+      const allDevs = globalData.allDevices || [];
+      const outdatedDevices = allDevs.filter(d => {
+        const model = (d.model || '').toLowerCase();
+        const os = (d.os_version || d.osVersion || '').toLowerCase();
+        const isIos = model.includes('ios') || model.includes('iphone') || os.includes('ios');
+        const target = isIos ? latestIos : latestAndroid;
+        const ver = d.app_version || d.appVersion || '1.0';
+        return isVersionOlder(ver, target);
+      });
+      const banner = document.getElementById('version-warning-banner');
+      const bannerText = document.getElementById('outdated-count-text');
+      if (banner && bannerText) {
+        if (outdatedDevices.length > 0) {
+          banner.style.display = 'flex';
+          bannerText.innerText = \`Zaznanih je \${outdatedDevices.length} naprav z zastarelo različico aplikacije (Android uradna: v\${latestAndroid}, iOS uradna: v\${latestIos}).\`;
+        } else {
+          banner.style.display = 'none';
+        }
+      }
 
       // Značke na zavihkih
       document.getElementById('badge-push').innerText = o.totalPushSentCount || 0;
@@ -3004,13 +3240,19 @@ function renderAdminDashboardHtml() {
         const liveDev = liveMap.get(devId);
         const model = d.model || 'Neznan model';
         const os = d.os_version || d.osVersion || 'Neznan OS';
-        const appVer = d.app_version || d.appVersion || '1.2.0';
+        const appVer = d.app_version || d.appVersion || '1.0';
         const screen = (liveDev ? liveDev.currentScreen : d.current_screen) || 'Zemljevid & Šanki';
         const ip = d.ip || 'unknown';
         const lastSeen = d.last_seen || d.lastSeen;
 
         const isIos = (model + ' ' + os).toLowerCase().includes('ios') || (model + ' ' + os).toLowerCase().includes('iphone');
         const platformBadge = isIos ? '<span class="badge-tag" style="background:rgba(59,130,246,0.15); color:#60a5fa;">iOS</span>' : '<span class="badge-tag" style="background:rgba(16,185,129,0.15); color:#34d399;">Android</span>';
+
+        const latestTarget = isIos ? (globalData.settings?.latest_version_ios || '1.2.0') : (globalData.settings?.latest_version_android || '1.2.0');
+        const isOld = isVersionOlder(appVer, latestTarget);
+        const versionBadge = isOld
+          ? \`<span class="badge-tag" style="background:var(--red-bg); color:var(--red); border-color:rgba(239,68,68,0.4);" title="Zastarela različica! Zadnja uradna je v\\${latestTarget}">v\\${escapeHtml(appVer)} (Zastarela)</span>\`
+          : \`<span class="badge-tag" style="background:var(--green-bg); color:var(--green); border-color:rgba(16,185,129,0.3);">v\\${escapeHtml(appVer)} (Zadnja)</span>\`;
 
         let screenColor = 'var(--blue)';
         if (screen.includes('Zemljevid') || screen.includes('Šank')) screenColor = 'var(--green)';
@@ -3027,7 +3269,7 @@ function renderAdminDashboardHtml() {
             <td class="mono" style="font-size:11px;" title="\${devId}">
               \${devId.length > 18 ? devId.substring(0, 18) + '...' : devId}
             </td>
-            <td class="mono">v\${escapeHtml(appVer)}</td>
+            <td>\${versionBadge}</td>
             <td>
               <span class="badge-tag" style="background:rgba(255,255,255,0.05); color:\${screenColor}; border-color:\${screenColor};">
                 \${escapeHtml(screen)}
@@ -3285,13 +3527,72 @@ function renderAdminDashboardHtml() {
             if (fl && document.activeElement !== fl) fl.value = f.lat || '';
             if (flo && document.activeElement !== flo) flo.value = f.lon || '';
             if (fno && document.activeElement !== fno) fno.value = f.note || '';
+
+            const vAnd = document.getElementById('config-ver-android');
+            const vIos = document.getElementById('config-ver-ios');
+            const vMin = document.getElementById('config-min-version');
+            const vNot = document.getElementById('config-ver-notes');
+            if (vAnd && document.activeElement !== vAnd) vAnd.value = s.latest_version_android || '1.2.0';
+            if (vIos && document.activeElement !== vIos) vIos.value = s.latest_version_ios || '1.2.0';
+            if (vMin && document.activeElement !== vMin) vMin.value = s.min_version || '1.0.0';
+            if (vNot && document.activeElement !== vNot) vNot.value = s.version_update_notes || '';
           }
         } catch (e) {}
       }
       const featActive = document.getElementById('feat-active-text');
       if (featActive) featActive.innerText = featDesc;
 
+      if (!hasLoadedConfig) {
+        const vAnd = document.getElementById('config-ver-android');
+        const vIos = document.getElementById('config-ver-ios');
+        const vMin = document.getElementById('config-min-version');
+        const vNot = document.getElementById('config-ver-notes');
+        if (vAnd && document.activeElement !== vAnd) vAnd.value = s.latest_version_android || '1.2.0';
+        if (vIos && document.activeElement !== vIos) vIos.value = s.latest_version_ios || '1.2.0';
+        if (vMin && document.activeElement !== vMin) vMin.value = s.min_version || '1.0.0';
+        if (vNot && document.activeElement !== vNot) vNot.value = s.version_update_notes || '';
+      }
+
       hasLoadedConfig = true;
+    }
+
+    async function saveVersions() {
+      const latestVersionAndroid = document.getElementById('config-ver-android').value.trim();
+      const latestVersionIos = document.getElementById('config-ver-ios').value.trim();
+      const minVersion = document.getElementById('config-min-version').value.trim();
+      const versionNotes = document.getElementById('config-ver-notes').value.trim();
+      const statusSpan = document.getElementById('version-save-status');
+
+      try {
+        const res = await fetch('/api/admin/settings/update', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            latestVersionAndroid,
+            latestVersionIos,
+            minVersion,
+            versionNotes
+          })
+        });
+        const d = await res.json();
+        if (d.success) {
+          if (statusSpan) {
+            statusSpan.style.display = 'inline';
+            setTimeout(() => { statusSpan.style.display = 'none'; }, 5000);
+          }
+          if (globalData && globalData.settings) {
+            globalData.settings.latest_version_android = latestVersionAndroid;
+            globalData.settings.latest_version_ios = latestVersionIos;
+            globalData.settings.min_version = minVersion;
+            globalData.settings.version_update_notes = versionNotes;
+          }
+          fetchData();
+        } else {
+          alert('Napaka: ' + (d.error || 'Neznana napaka'));
+        }
+      } catch (e) {
+        alert('Napaka: ' + e.message);
+      }
     }
 
     async function saveMotd() {
@@ -3389,6 +3690,20 @@ function renderAdminDashboardHtml() {
       } catch (e) {
         return isoStr;
       }
+    }
+
+    function isVersionOlder(current, latest) {
+      if (!current || !latest) return false;
+      const cParts = String(current).replace(/[^0-9.]/g, '').split('.').map(Number);
+      const lParts = String(latest).replace(/[^0-9.]/g, '').split('.').map(Number);
+      const maxLen = Math.max(cParts.length, lParts.length);
+      for (let i = 0; i < maxLen; i++) {
+        const c = cParts[i] || 0;
+        const l = lParts[i] || 0;
+        if (c < l) return true;
+        if (c > l) return false;
+      }
+      return false;
     }
 
     // ODŠTEVALNIK OSVEŽEVANJA

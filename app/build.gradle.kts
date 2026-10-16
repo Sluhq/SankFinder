@@ -11,14 +11,12 @@ android {
 
     defaultConfig {
         applicationId = "com.example.sankfinder"
-        minSdk = 31 // ✅ zdaj bo delovalo na Android 12
+        minSdk = 31
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
-
-
 
     buildTypes {
         release {
@@ -41,6 +39,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

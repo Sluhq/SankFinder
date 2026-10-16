@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -74,6 +75,7 @@ import androidx.navigation.NavController
 import com.example.compose.DrajvGreen
 import com.example.compose.DrajvRed
 import com.example.sankfinder.datastore.ThemeDataStore
+import com.example.sankfinder.network.GlobalSyncManager
 import com.example.sankfinder.ui.components.AppTopBar
 import com.example.sankfinder.ui.navigation.BottomNavBar
 import com.example.sankfinder.ui.navigation.Routes
@@ -92,6 +94,15 @@ fun SettingsPage(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val isDarkTheme by themeDataStore.isDarkTheme.collectAsState(initial = false)
+
+    val isOutdated by GlobalSyncManager.isOutdated.collectAsState()
+    val latestVersion by GlobalSyncManager.latestVersion.collectAsState()
+    val versionNotes by GlobalSyncManager.versionNotes.collectAsState()
+    val currentVersion = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.0" }
+
+    LaunchedEffect(Unit) {
+        GlobalSyncManager.fetchInitialConfig()
+    }
 
     val savedRadiusMeters by themeDataStore.searchRadius.collectAsState(initial = 2000)
     var selectedRadiusKm by remember { mutableIntStateOf(savedRadiusMeters / 1000) }
@@ -226,6 +237,48 @@ fun SettingsPage(
                 .padding(innerPadding)
                 .padding(horizontal = 18.dp, vertical = 12.dp)
         ) {
+            // OPOZORILO: ZASTARELA VERZIJA APLIKACIJE (če strežnik poroča o novejši verziji)
+            if (isOutdated) {
+                item {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 14.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.22f)
+                        ),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Opozorilo: Stara različica aplikacije",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Uporabljate v$currentVersion, na voljo je nova posodobitev v${latestVersion ?: "1.2.0"}. ${versionNotes ?: ""} Prosimo posodobite aplikacijo.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
             // TOP ITEM: Zvočna opozorila (as seen in DRAJV screenshot)
             item {
                 Row(
@@ -380,9 +433,12 @@ fun SettingsPage(
 
                         // 4. Različica aplikacije
                         DiagnosticItem(
-                            isApproved = true,
+                            isApproved = !isOutdated,
                             title = "Različica aplikacije",
-                            subtitle = "Aplikacija je posodobljena. Različica 1.2.0 (Build 36).",
+                            subtitle = if (isOutdated)
+                                "Zastarela različica (v$currentVersion). Na voljo je nova različica v${latestVersion ?: "1.2.0"}!"
+                            else
+                                "Aplikacija je posodobljena. Različica $currentVersion (Najnovejša).",
                             onClick = { showAboutDialog = true }
                         )
 
@@ -634,9 +690,22 @@ fun SettingsPage(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        "Različica: 1.2.0 (Build 36)",
+                        "Različica: $currentVersion (Zadnja na strežniku: ${latestVersion ?: "1.2.0"})",
                         fontWeight = FontWeight.SemiBold
                     )
+                    if (isOutdated) {
+                        Text(
+                            "Opozorilo: Vaša različica je zastarela! Prosimo posodobite aplikacijo.",
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            "Aplikacija je posodobljena na najnovejšo različico.",
+                            color = Color(0xFF10B981),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                     Text("Avtor: Sluhq")
                     Text("Namen: Zanesljiv vodnik za žejne popotnike, ki iščejo najboljše šanke v bližini z vgrajenim merilnikom pijač in varno potjo domov.")
                     Spacer(modifier = Modifier.height(4.dp))

@@ -5,11 +5,13 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.example.sankfinder.MainActivity
+import com.example.sankfinder.R
 
 object SankNotificationHelper {
 
@@ -65,8 +67,19 @@ object SankNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val appLogoBitmap = try {
+            BitmapFactory.decodeResource(context.resources, R.drawable.sankfinder_logo)
+        } catch (e: Exception) {
+            null
+        }
+
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.mipmap.sankfinder_logo)
+            .apply {
+                if (appLogoBitmap != null) {
+                    setLargeIcon(appLogoBitmap)
+                }
+            }
             .setContentTitle("ŠankFinder: $pubName")
             .setContentText("Aktivni obisk • $pubAddress")
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION) // Same category as Google Maps navigation
@@ -272,8 +285,19 @@ object SankNotificationHelper {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
+        val appLogoBitmap = try {
+            BitmapFactory.decodeResource(context.resources, R.drawable.sankfinder_logo)
+        } catch (e: Exception) {
+            null
+        }
+
         val builder = NotificationCompat.Builder(context, GLOBAL_ANNOUNCEMENT_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setSmallIcon(R.mipmap.sankfinder_logo)
+            .apply {
+                if (appLogoBitmap != null) {
+                    setLargeIcon(appLogoBitmap)
+                }
+            }
             .setContentTitle(title)
             .setContentText(message)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
