@@ -171,6 +171,7 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
         let hostInfo = hosts[currentHostIndex]
         let scheme = hostInfo.useSsl ? "wss" : "ws"
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
+        let signature = SecureStorage.shared.generateSignature(timestamp: timestamp, deviceId: deviceId)
         let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.1"
         let encVer = currentVer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "1.2.1"
         let isTerms = UserDefaults.standard.bool(forKey: "hasAcceptedTerms") ? "1" : "0"

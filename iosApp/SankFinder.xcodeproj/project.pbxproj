@@ -32,6 +32,7 @@
 		C10000000000000000000018 /* LiveNavigationManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000018 /* LiveNavigationManager.swift */; };
 		C10000000000000000000019 /* WatchConnectivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000019 /* WatchConnectivityManager.swift */; };
 		C1000000000000000000001A /* SecureStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001A /* SecureStorage.swift */; };
+		C1000000000000000000001B /* LegalTermsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1000000000000000000001B /* LegalTermsView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -62,6 +63,7 @@
 		B10000000000000000000018 /* LiveNavigationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveNavigationManager.swift; sourceTree = "<group>"; };
 		B10000000000000000000019 /* WatchConnectivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectivityManager.swift; sourceTree = "<group>"; };
 		B1000000000000000000001A /* SecureStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureStorage.swift; sourceTree = "<group>"; };
+		B1000000000000000000001B /* LegalTermsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LegalTermsView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -112,6 +114,7 @@
 				B10000000000000000000018 /* LiveNavigationManager.swift */,
 				B10000000000000000000019 /* WatchConnectivityManager.swift */,
 				B1000000000000000000001A /* SecureStorage.swift */,
+				B1000000000000000000001B /* LegalTermsView.swift */,
 			);
 			path = SankFinder;
 			sourceTree = "<group>";
@@ -217,6 +220,7 @@
 				C10000000000000000000018 /* LiveNavigationManager.swift in Sources */,
 				C10000000000000000000019 /* WatchConnectivityManager.swift in Sources */,
 				C1000000000000000000001A /* SecureStorage.swift in Sources */,
+				C1000000000000000000001B /* LegalTermsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
