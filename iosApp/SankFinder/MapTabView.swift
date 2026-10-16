@@ -32,7 +32,7 @@ struct MapTabView: View {
             CustomMapView(
                 centerCoordinate: $centerCoord,
                 centerTrigger: centerTrigger,
-                userHeading: (locationManager.speed >= 0.5 && locationManager.course >= 0) ? locationManager.course : locationManager.heading,
+                userHeading: locationManager.hasHeading ? locationManager.heading : (locationManager.course >= 0 ? locationManager.course : locationManager.heading),
                 mapHeading: $mapHeading,
                 resetHeadingTrigger: resetHeadingTrigger,
                 bars: network.bars,

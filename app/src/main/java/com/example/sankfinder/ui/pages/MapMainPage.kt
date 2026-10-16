@@ -329,13 +329,11 @@ fun MapMainPage(
         }
     }
 
-    // Ločeno posodabljanje smeri kompasa na modri piki SAMO kadar ni aktivne navigacije
-    LaunchedEffect(userHeading) {
-        if (!isNavigating || !isTrackingUser) {
-            userMarkerRef?.let { marker ->
-                marker.rotation = -userHeading
-                mapView.postInvalidate()
-            }
+    // Sprotno posodabljanje smeri kompasa na modri piki uporabnika
+    LaunchedEffect(userHeading, mapOrientationDeg) {
+        userMarkerRef?.let { marker ->
+            marker.rotation = -(userHeading + mapView.mapOrientation)
+            mapView.postInvalidate()
         }
     }
 
@@ -375,11 +373,7 @@ fun MapMainPage(
         }
 
         if (marker != null && marker.position != null) {
-            if (isNavigating && isTrackingUser) {
-                marker.rotation = 0f // Kaže naravnost naprej (gor na zaslonu) v smeri hoje
-            } else {
-                marker.rotation = -userHeading
-            }
+            marker.rotation = -(userHeading + mapView.mapOrientation)
 
             val startLat = marker.position.latitude
             val startLon = marker.position.longitude

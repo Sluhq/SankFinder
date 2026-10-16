@@ -381,9 +381,9 @@ class UserHeadingAnnotationView: MKAnnotationView {
     func updateHeading(_ heading: Double, mapHeading: Double = 0.0) {
         let relative = (heading - mapHeading + 360.0).truncatingRemainder(dividingBy: 360.0)
         let radians = CGFloat(relative * .pi / 180.0)
-        UIView.animate(withDuration: 0.12) {
+        UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: {
             self.containerView.transform = CGAffineTransform(rotationAngle: radians)
-        }
+        }, completion: nil)
     }
 }
 
@@ -637,12 +637,12 @@ struct CustomMapView: UIViewRepresentable {
     
     func updateUIView(_ uiView: MKMapView, context: Context) {
         context.coordinator.parent = self
-        // Med aktivno navigacijo puščica uporabnika vedno stabilno kaže v smer hoje naravnost naprej,
-        // brez nihanja zaradi kompasa telefona!
-        if isNavigating && isFollowingUser {
-            context.coordinator.currentUserView?.updateHeading(uiView.camera.heading, mapHeading: uiView.camera.heading)
-        } else {
-            context.coordinator.currentUserView?.updateHeading(userHeading, mapHeading: uiView.camera.heading)
+        // Puščica uporabnika vedno dinamično kaže v smer zasuka telefona glede na trenutno orientacijo zemljevida
+        if let userView = context.coordinator.currentUserView {
+            userView.updateHeading(userHeading, mapHeading: uiView.camera.heading)
+        } else if let userAnnot = uiView.userLocation as MKAnnotation?, let view = uiView.view(for: userAnnot) as? UserHeadingAnnotationView {
+            context.coordinator.currentUserView = view
+            view.updateHeading(userHeading, mapHeading: uiView.camera.heading)
         }
         
         // 1. Upravljanje navigacijske kamere (Sledenje uporabniku v smeri HOJE - stabilno vzdolž ulice brez tresenja)
@@ -890,10 +890,11 @@ struct CustomMapView: UIViewRepresentable {
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) {
             let heading = mapView.camera.heading
             currentManeuverView?.updateRotation(mapHeading: heading)
-            if parent.isNavigating && parent.isFollowingUser {
-                currentUserView?.updateHeading(heading, mapHeading: heading)
-            } else {
-                currentUserView?.updateHeading(parent.userHeading, mapHeading: heading)
+            if let userView = currentUserView {
+                userView.updateHeading(parent.userHeading, mapHeading: heading)
+            } else if let userAnnot = mapView.userLocation as MKAnnotation?, let view = mapView.view(for: userAnnot) as? UserHeadingAnnotationView {
+                currentUserView = view
+                view.updateHeading(parent.userHeading, mapHeading: heading)
             }
             if abs(parent.mapHeading - heading) > 0.5 {
                 DispatchQueue.main.async {

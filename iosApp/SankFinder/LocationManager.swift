@@ -12,6 +12,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     @Published var accuracy: CLLocationAccuracy = -1.0
     @Published var hasRealLocation: Bool = false
     @Published var heading: Double = 0.0
+    @Published var hasHeading: Bool = false
     @Published var course: Double = -1.0
     @Published var speed: Double = 0.0
     @Published var isAuthorized: Bool = false
@@ -23,7 +24,7 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
         manager.desiredAccuracy = kCLLocationAccuracyBestForNavigation
         manager.activityType = .fitness
         manager.distanceFilter = 2.0
-        manager.headingFilter = 3.0
+        manager.headingFilter = kCLHeadingFilterNone
         
         // Takoj sproži zahtevo za lokacijo ob zagonu
         manager.requestWhenInUseAuthorization()
@@ -101,9 +102,11 @@ class LocationManager: NSObject, ObservableObject, CLLocationManagerDelegate {
     }
     
     func locationManager(_ manager: CLLocationManager, didUpdateHeading newHeading: CLHeading) {
-        if newHeading.headingAccuracy >= 0 {
+        let validHeading = newHeading.trueHeading >= 0 ? newHeading.trueHeading : newHeading.magneticHeading
+        if validHeading >= 0 {
             DispatchQueue.main.async {
-                self.heading = newHeading.trueHeading > 0 ? newHeading.trueHeading : newHeading.magneticHeading
+                self.heading = validHeading
+                self.hasHeading = true
             }
         }
     }
