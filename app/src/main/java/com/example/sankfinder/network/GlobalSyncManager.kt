@@ -165,9 +165,11 @@ object GlobalSyncManager {
 
     private fun sendScreenReport(screen: String) {
         try {
+            val appVer = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.0" }
             val json = JSONObject().apply {
                 put("type", "screen_change")
                 put("screen", screen)
+                put("version", appVer)
             }
             activeWebSocket?.send(json.toString())
         } catch (e: Exception) {

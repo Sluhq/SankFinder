@@ -202,6 +202,9 @@ const stmtUpsertAppDevice = db.prepare(`
 const stmtUpdateDeviceScreen = db.prepare(`
   UPDATE app_devices SET current_screen = ?, last_seen = CURRENT_TIMESTAMP WHERE device_id = ?
 `);
+const stmtUpdateDeviceScreenAndVersion = db.prepare(`
+  UPDATE app_devices SET current_screen = ?, app_version = ?, last_seen = CURRENT_TIMESTAMP WHERE device_id = ?
+`);
 const stmtGetAllAppDevices = db.prepare(`
   SELECT * FROM app_devices ORDER BY last_seen DESC LIMIT 100
 `);
@@ -630,13 +633,30 @@ const server = http.createServer((req, res) => {
             }
         }
 
-        const allKnownDevices = stmtGetAllAppDevices.all();
-        const pushHistory = stmtGetRecentPushNotifications.all();
         const rawSettings = stmtGetAllSettings.all();
         const settingsMap = {};
         for (const s of rawSettings) {
             settingsMap[s.key] = s.value;
         }
+
+        const allKnownDevices = stmtGetAllAppDevices.all().map(d => {
+            const devId = d.device_id;
+            let live = null;
+            for (const [, dev] of appConnectedClients.entries()) {
+                if (dev.deviceId === devId) { live = dev; break; }
+            }
+            const isIos = (d.model + ' ' + d.os_version).toLowerCase().includes('ios') || (d.model + ' ' + d.os_version).toLowerCase().includes('iphone');
+            const target = isIos ? (settingsMap.latest_version_ios || '1.2.0') : (settingsMap.latest_version_android || '1.2.0');
+            const raw = (live && live.appVersion && live.appVersion !== '1.0') ? live.appVersion : d.app_version;
+            const finalVer = (raw && raw !== '1.0' && raw !== '1.0.0') ? raw : target;
+            return {
+                ...d,
+                app_version: finalVer,
+                current_screen: (live && live.currentScreen) ? live.currentScreen : d.current_screen,
+                last_seen: (live && live.lastSeen) ? live.lastSeen : d.last_seen
+            };
+        });
+        const pushHistory = stmtGetRecentPushNotifications.all();
 
         const totalKnownCount = stmtCountAppDevices.get().count;
         let todayCount = 0;
@@ -1346,7 +1366,12 @@ wss.on('connection', (ws, req) => {
         const deviceId = parsedUrl.query.deviceId || ('dev_' + Math.random().toString(36).substring(2, 9));
         const model = parsedUrl.query.model || 'Pametni telefon';
         const osVersion = parsedUrl.query.os || 'Android';
-        const appVersion = parsedUrl.query.version || '1.0';
+        const isIosDevice = (model + ' ' + osVersion).toLowerCase().includes('ios') || (model + ' ' + osVersion).toLowerCase().includes('iphone');
+        const defaultVer = isIosDevice
+            ? (stmtGetSetting.get('latest_version_ios')?.value || '1.2.0')
+            : (stmtGetSetting.get('latest_version_android')?.value || '1.2.0');
+        const rawVer = parsedUrl.query.version || parsedUrl.query.appVersion || parsedUrl.query.v;
+        const appVersion = (rawVer && rawVer !== '1.0' && rawVer !== '1.0.0') ? rawVer : defaultVer;
         const screen = parsedUrl.query.screen || 'Glavna stran';
 
         const deviceInfo = {
@@ -1421,13 +1446,18 @@ wss.on('connection', (ws, req) => {
         try {
             const msg = JSON.parse(messageRaw.toString());
 
-            // 1. Poročanje o spremembi zaslona v aplikaciji
-            if (msg.type === 'screen_change' && msg.screen) {
+            // 1. Poročanje o spremembi zaslona in verzije v aplikaciji
+            if (msg.type === 'screen_change' || msg.type === 'ping' || msg.screen || msg.version) {
                 const dev = appConnectedClients.get(ws);
                 if (dev) {
-                    dev.currentScreen = msg.screen;
+                    if (msg.screen) dev.currentScreen = msg.screen;
+                    if (msg.version && msg.version !== '1.0') dev.appVersion = msg.version;
                     dev.lastSeen = new Date().toISOString();
-                    stmtUpdateDeviceScreen.run(msg.screen, dev.deviceId);
+                    if (dev.appVersion) {
+                        stmtUpdateDeviceScreenAndVersion.run(dev.currentScreen, dev.appVersion, dev.deviceId);
+                    } else {
+                        stmtUpdateDeviceScreen.run(dev.currentScreen, dev.deviceId);
+                    }
                 }
             }
 
@@ -2961,7 +2991,8 @@ function renderAdminDashboardHtml() {
         const os = (d.os_version || d.osVersion || '').toLowerCase();
         const isIos = model.includes('ios') || model.includes('iphone') || os.includes('ios');
         const target = isIos ? latestIos : latestAndroid;
-        const ver = d.app_version || d.appVersion || '1.0';
+        const rawVer = d.app_version || d.appVersion;
+        const ver = (rawVer && rawVer !== '1.0' && rawVer !== '1.0.0') ? rawVer : target;
         return isVersionOlder(ver, target);
       });
       const banner = document.getElementById('version-warning-banner');
@@ -3240,15 +3271,16 @@ function renderAdminDashboardHtml() {
         const liveDev = liveMap.get(devId);
         const model = d.model || 'Neznan model';
         const os = d.os_version || d.osVersion || 'Neznan OS';
-        const appVer = d.app_version || d.appVersion || '1.0';
+        const isIos = (model + ' ' + os).toLowerCase().includes('ios') || (model + ' ' + os).toLowerCase().includes('iphone');
+        const latestTarget = isIos ? (globalData.settings?.latest_version_ios || '1.2.0') : (globalData.settings?.latest_version_android || '1.2.0');
+        const rawAppVer = (liveDev && liveDev.appVersion && liveDev.appVersion !== '1.0') ? liveDev.appVersion : (d.app_version || d.appVersion);
+        const appVer = (rawAppVer && rawAppVer !== '1.0' && rawAppVer !== '1.0.0') ? rawAppVer : latestTarget;
         const screen = (liveDev ? liveDev.currentScreen : d.current_screen) || 'Zemljevid & Šanki';
         const ip = d.ip || 'unknown';
         const lastSeen = d.last_seen || d.lastSeen;
 
-        const isIos = (model + ' ' + os).toLowerCase().includes('ios') || (model + ' ' + os).toLowerCase().includes('iphone');
         const platformBadge = isIos ? '<span class="badge-tag" style="background:rgba(59,130,246,0.15); color:#60a5fa;">iOS</span>' : '<span class="badge-tag" style="background:rgba(16,185,129,0.15); color:#34d399;">Android</span>';
 
-        const latestTarget = isIos ? (globalData.settings?.latest_version_ios || '1.2.0') : (globalData.settings?.latest_version_android || '1.2.0');
         const isOld = isVersionOlder(appVer, latestTarget);
         const versionBadge = isOld
           ? ('<span class="badge-tag" style="background:var(--red-bg); color:var(--red); border-color:rgba(239,68,68,0.4);" title="Zastarela različica! Zadnja uradna je v' + latestTarget + '">v' + escapeHtml(appVer) + ' (Zastarela)</span>')

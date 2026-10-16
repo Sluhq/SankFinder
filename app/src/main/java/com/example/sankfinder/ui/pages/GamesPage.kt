@@ -543,20 +543,13 @@ fun GamesPage(
                             } else {
                                 lokalViewModel.legendaryBurekSpots
                             }
-                            if (loc != null) {
-                                baseList.map { spot ->
-                                    val results = FloatArray(1)
-                                    android.location.Location.distanceBetween(loc.latitude, loc.longitude, spot.lat, spot.lon, results)
-                                    spot to results[0]
-                                }.sortedWith(
-                                    compareBy(
-                                        { if (onlyOpenBurekSpots) 0 else (!getBakeryStatus(it.first.openingHours).first) },
-                                        { it.second }
-                                    )
-                                )
-                            } else {
-                                baseList.map { it to null }.sortedBy { !getBakeryStatus(it.first.openingHours).first }
-                            }
+                            val lat = loc?.latitude ?: 46.056946
+                            val lon = loc?.longitude ?: 14.505751
+                            baseList.map { spot ->
+                                val results = FloatArray(1)
+                                android.location.Location.distanceBetween(lat, lon, spot.lat, spot.lon, results)
+                                spot to results[0]
+                            }.sortedBy { it.second }
                         }
 
                         val displayedBurekSpots = if (showAllBurekSpots) sortedBurekSpots else sortedBurekSpots.take(3)

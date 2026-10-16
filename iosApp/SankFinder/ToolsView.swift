@@ -306,23 +306,41 @@ struct ToolsView: View {
                 }
             }
             
-            let filteredBureks = onlyOpenBurek ? burekSpots.filter { $0.isOpenNow } : burekSpots
-            let displayed = showAllBureks ? filteredBureks : Array(filteredBureks.prefix(3))
+            let userLoc = locationManager.location ?? LocationManager.defaultCoordinate
+            let baseBureks = onlyOpenBurek ? burekSpots.filter { $0.isOpenNow } : burekSpots
+            let sortedBureks = baseBureks.sorted { a, b in
+                let distA = a.distance(from: userLoc) ?? Double.greatestFiniteMagnitude
+                let distB = b.distance(from: userLoc) ?? Double.greatestFiniteMagnitude
+                return distA < distB
+            }
+            let displayed = showAllBureks ? sortedBureks : Array(sortedBureks.prefix(3))
             
             VStack(spacing: 8) {
-                ForEach(displayed) { spot in
+                ForEach(Array(displayed.enumerated()), id: \.element.id) { index, spot in
                     HStack {
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(spot.name)
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
+                            HStack(spacing: 6) {
+                                Text(spot.name)
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                
+                                if index == 0 {
+                                    Text("Najblizji")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(Theme.beerGold)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Theme.beerGold.opacity(0.2))
+                                        .cornerRadius(4)
+                                }
+                            }
                             
                             HStack(spacing: 6) {
                                 Text(spot.statusBadge.text)
                                     .font(.system(size: 11, weight: .bold))
                                     .foregroundColor(spot.statusBadge.isGreen ? Theme.drajvGreen : Theme.drajvRed)
                                 
-                                Text("• \(spot.formattedDistance(from: locationManager.location))")
+                                Text("• \(spot.formattedDistance(from: userLoc))")
                                     .font(.system(size: 11))
                                     .foregroundColor(Theme.beerGold)
                             }
@@ -345,9 +363,9 @@ struct ToolsView: View {
                 }
             }
             
-            if filteredBureks.count > 3 {
+            if sortedBureks.count > 3 {
                 Button(action: { showAllBureks.toggle() }) {
-                    Text(showAllBureks ? "Pokaži manj" : "Prikaži vseh \(filteredBureks.count) burek točk")
+                    Text(showAllBureks ? "Pokaži manj" : "Prikaži vseh \(sortedBureks.count) burek točk")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundColor(Theme.beerGold)
                         .frame(maxWidth: .infinity)

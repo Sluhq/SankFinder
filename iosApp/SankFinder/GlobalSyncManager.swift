@@ -33,7 +33,9 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
     }
     
     func checkVersionConfig() {
-        guard let url = URL(string: "https://sankfinder.sluga.me/api/app/config") else { return }
+        let hostInfo = hosts[currentHostIndex]
+        let scheme = hostInfo.useSsl ? "https" : "http"
+        guard let url = URL(string: "\(scheme)://\(hostInfo.host)/api/app/config") else { return }
         URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
             guard let self = self, let data = data,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
@@ -281,10 +283,12 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
             }
         }
         
+        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
         let pingObj: [String: Any] = [
             "type": "ping",
             "deviceId": deviceId,
-            "screen": currentScreen
+            "screen": currentScreen,
+            "version": currentVer
         ]
         if let data = try? JSONSerialization.data(withJSONObject: pingObj),
            let str = String(data: data, encoding: .utf8) {
@@ -293,7 +297,12 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
     }
     
     private func sendScreenChange(_ screen: String) {
-        let obj: [String: Any] = ["type": "screen_change", "screen": screen]
+        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+        let obj: [String: Any] = [
+            "type": "screen_change",
+            "screen": screen,
+            "version": currentVer
+        ]
         if let data = try? JSONSerialization.data(withJSONObject: obj),
            let str = String(data: data, encoding: .utf8) {
             webSocketTask?.send(.string(str)) { _ in }
