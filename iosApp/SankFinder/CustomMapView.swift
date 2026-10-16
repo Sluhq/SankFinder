@@ -378,10 +378,32 @@ class UserHeadingAnnotationView: MKAnnotationView {
         containerView.addSubview(innerDot)
     }
     
+    private var currentAngleDeg: Double = 0.0
+    private var hasSetInitialAngle: Bool = false
+
     func updateHeading(_ heading: Double, mapHeading: Double = 0.0) {
-        let relative = (heading - mapHeading + 360.0).truncatingRemainder(dividingBy: 360.0)
-        let radians = CGFloat(relative * .pi / 180.0)
-        UIView.animate(withDuration: 0.12, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: {
+        let targetDeg = heading - mapHeading
+        
+        if !hasSetInitialAngle {
+            hasSetInitialAngle = true
+            currentAngleDeg = targetDeg
+            let rad = CGFloat(currentAngleDeg * .pi / 180.0)
+            self.containerView.transform = CGAffineTransform(rotationAngle: rad)
+            return
+        }
+        
+        // Izracunaj najkrajso kotno razliko med trenutnim in novim kotom (med -180 in +180)
+        var diff = (targetDeg - currentAngleDeg).truncatingRemainder(dividingBy: 360.0)
+        if diff > 180.0 { diff -= 360.0 }
+        if diff < -180.0 { diff += 360.0 }
+        
+        // Mrtva cona: ignoriraj mikrotresljaje kompasa pod 1.5 stopinje
+        if abs(diff) < 1.5 { return }
+        
+        currentAngleDeg += diff
+        let radians = CGFloat(currentAngleDeg * .pi / 180.0)
+        
+        UIView.animate(withDuration: 0.16, delay: 0, options: [.beginFromCurrentState, .curveEaseOut], animations: {
             self.containerView.transform = CGAffineTransform(rotationAngle: radians)
         }, completion: nil)
     }
@@ -739,72 +761,98 @@ struct CustomMapView: UIViewRepresentable {
             uiView.setCamera(newCam, animated: true)
         }
         
-        // 2. Posodobitev navigacijske rute
-        let currentPolylines = uiView.overlays.compactMap { $0 as? MKPolyline }
-        uiView.removeOverlays(currentPolylines)
-        
-        if !routeCoordinates.isEmpty {
-            let polyline = MKPolyline(coordinates: routeCoordinates, count: routeCoordinates.count)
-            // Polyline dodamo na .aboveLabels, da je vedno nad ploščicami
-            uiView.addOverlay(polyline, level: .aboveLabels)
+        // 2. Posodobitev navigacijske rute (posodobi se LE ob dejanski spremembi tock rute)
+        let routeSig = routeCoordinates.isEmpty ? "" : "\(routeCoordinates.count)_\(routeCoordinates.first?.latitude ?? 0)_\(routeCoordinates.last?.latitude ?? 0)"
+        if context.coordinator.lastRouteSignature != routeSig {
+            context.coordinator.lastRouteSignature = routeSig
+            let currentPolylines = uiView.overlays.compactMap { $0 as? MKPolyline }
+            uiView.removeOverlays(currentPolylines)
             
-            // Predogled celotne trase SAMO pred začetkom aktivne navigacije
-            if !isNavigating && context.coordinator.lastRouteCount != routeCoordinates.count {
-                context.coordinator.lastRouteCount = routeCoordinates.count
-                let edgeInsets = UIEdgeInsets(top: 100, left: 60, bottom: 200, right: 60)
-                uiView.setVisibleMapRect(polyline.boundingMapRect, edgePadding: edgeInsets, animated: true)
+            if !routeCoordinates.isEmpty {
+                let polyline = MKPolyline(coordinates: routeCoordinates, count: routeCoordinates.count)
+                // Polyline dodamo na .aboveLabels, da je vedno nad ploscicami
+                uiView.addOverlay(polyline, level: .aboveLabels)
+                
+                // Predogled celotne trase SAMO pred zacetkom aktivne navigacije
+                if !isNavigating && context.coordinator.lastRouteCount != routeCoordinates.count {
+                    context.coordinator.lastRouteCount = routeCoordinates.count
+                    let edgeInsets = UIEdgeInsets(top: 100, left: 60, bottom: 200, right: 60)
+                    uiView.setVisibleMapRect(polyline.boundingMapRect, edgePadding: edgeInsets, animated: true)
+                }
+                
+                uiView.selectedAnnotations = []
+            } else {
+                context.coordinator.lastRouteCount = 0
             }
-            
-            uiView.selectedAnnotations = []
-        } else {
-            context.coordinator.lastRouteCount = 0
         }
         
-        // 2. Posodobitev dinamične UKRIVLJENE navigacijske puščice na cestišču za prihajajoči zavoj (100% kot Android)
-        let existingCurvedManeuvers = uiView.annotations.compactMap { $0 as? CurvedManeuverAnnotation }
-        uiView.removeAnnotations(existingCurvedManeuvers)
-        
-        if !routeCoordinates.isEmpty && !routeSteps.isEmpty {
+        // 2.1 Posodobitev dinamicne UKRIVLJENE navigacijske puscice na cestiscu za prihajajoci zavoj
+        // Puscico osvezimo SAMO ko se zamenja korak ali ruta, ne pa na vsak premik kompasa (prepreci utripanje)
+        if !routeCoordinates.isEmpty && !routeSteps.isEmpty && isNavigating {
             let upcomingIdx = (currentStepIndex + 1 < routeSteps.count) ? (currentStepIndex + 1) : (routeSteps.count - 1)
             let step = routeSteps[upcomingIdx]
             let isArrive = step.maneuver?.type?.lowercased() == "arrive"
+            
             if !isArrive, let loc = step.maneuver?.location, loc.count >= 2 {
-                let geo = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
+                let stepKey = "\(upcomingIdx)_\(loc[0])_\(loc[1])"
                 
-                var bestIdx = -1
-                var minDist = Double.greatestFiniteMagnitude
-                for (i, pt) in routeCoordinates.enumerated() {
-                    let d = distanceBetween(pt, geo)
-                    if d < minDist {
-                        minDist = d
-                        bestIdx = i
+                if context.coordinator.currentManeuverStepKey != stepKey {
+                    context.coordinator.currentManeuverStepKey = stepKey
+                    
+                    if let oldAnnot = context.coordinator.currentManeuverAnnotation {
+                        uiView.removeAnnotation(oldAnnot)
+                        context.coordinator.currentManeuverAnnotation = nil
                     }
+                    
+                    let geo = CLLocationCoordinate2D(latitude: loc[1], longitude: loc[0])
+                    var bestIdx = -1
+                    var minDist = Double.greatestFiniteMagnitude
+                    for (i, pt) in routeCoordinates.enumerated() {
+                        let d = distanceBetween(pt, geo)
+                        if d < minDist {
+                            minDist = d
+                            bestIdx = i
+                        }
+                    }
+                    
+                    let bIn: Double
+                    let bOut: Double
+                    if bestIdx != -1 && routeCoordinates.count >= 2 {
+                        let pBefore = bestIdx > 0 ? routeCoordinates[bestIdx - 1] : routeCoordinates[0]
+                        let pAfter = bestIdx < routeCoordinates.count - 1 ? routeCoordinates[bestIdx + 1] : routeCoordinates.last!
+                        let rawIn = calculateBearing(from: pBefore, to: geo)
+                        let rawOut = calculateBearing(from: geo, to: pAfter)
+                        bIn = (pBefore.latitude != geo.latitude || pBefore.longitude != geo.longitude) ? rawIn : (step.maneuver?.bearingBefore ?? 0.0)
+                        bOut = (geo.latitude != pAfter.latitude || geo.longitude != pAfter.longitude) ? rawOut : (step.maneuver?.bearingAfter ?? 0.0)
+                    } else {
+                        bIn = step.maneuver?.bearingBefore ?? 0.0
+                        bOut = step.maneuver?.bearingAfter ?? 0.0
+                    }
+                    
+                    let rawTurn = ((bOut - bIn + 540.0).truncatingRemainder(dividingBy: 360.0)) - 180.0
+                    let arrowImg = createDynamicTurnArrowImage(turnAngleDeg: CGFloat(rawTurn))
+                    let annot = CurvedManeuverAnnotation(
+                        coordinate: geo,
+                        incomingBearing: bIn,
+                        turnAngle: rawTurn,
+                        arrowImage: arrowImg
+                    )
+                    context.coordinator.currentManeuverAnnotation = annot
+                    uiView.addAnnotation(annot)
                 }
-                
-                let bIn: Double
-                let bOut: Double
-                if bestIdx != -1 && routeCoordinates.count >= 2 {
-                    let pBefore = bestIdx > 0 ? routeCoordinates[bestIdx - 1] : routeCoordinates[0]
-                    let pAfter = bestIdx < routeCoordinates.count - 1 ? routeCoordinates[bestIdx + 1] : routeCoordinates.last!
-                    let rawIn = calculateBearing(from: pBefore, to: geo)
-                    let rawOut = calculateBearing(from: geo, to: pAfter)
-                    bIn = (pBefore.latitude != geo.latitude || pBefore.longitude != geo.longitude) ? rawIn : (step.maneuver?.bearingBefore ?? 0.0)
-                    bOut = (geo.latitude != pAfter.latitude || geo.longitude != pAfter.longitude) ? rawOut : (step.maneuver?.bearingAfter ?? 0.0)
-                } else {
-                    bIn = step.maneuver?.bearingBefore ?? 0.0
-                    bOut = step.maneuver?.bearingAfter ?? 0.0
+            } else {
+                if let oldAnnot = context.coordinator.currentManeuverAnnotation {
+                    uiView.removeAnnotation(oldAnnot)
+                    context.coordinator.currentManeuverAnnotation = nil
                 }
-                
-                let rawTurn = ((bOut - bIn + 540.0).truncatingRemainder(dividingBy: 360.0)) - 180.0
-                let arrowImg = createDynamicTurnArrowImage(turnAngleDeg: CGFloat(rawTurn))
-                let annot = CurvedManeuverAnnotation(
-                    coordinate: geo,
-                    incomingBearing: bIn,
-                    turnAngle: rawTurn,
-                    arrowImage: arrowImg
-                )
-                uiView.addAnnotation(annot)
+                context.coordinator.currentManeuverStepKey = nil
             }
+        } else {
+            if let oldAnnot = context.coordinator.currentManeuverAnnotation {
+                uiView.removeAnnotation(oldAnnot)
+                context.coordinator.currentManeuverAnnotation = nil
+            }
+            context.coordinator.currentManeuverStepKey = nil
         }
         
         // 3. Posodobitev lokalov (zelene pike)
@@ -869,13 +917,16 @@ struct CustomMapView: UIViewRepresentable {
         var wasFollowingUser: Bool = false
         weak var currentUserView: UserHeadingAnnotationView? = nil
         weak var currentManeuverView: CurvedManeuverAnnotationView? = nil
+        var currentManeuverStepKey: String? = nil
+        var currentManeuverAnnotation: CurvedManeuverAnnotation? = nil
+        var lastRouteSignature: String? = nil
         
         init(_ parent: CustomMapView) {
             self.parent = parent
         }
         
         @objc func handlePanGesture(_ gesture: UIPanGestureRecognizer) {
-            // Če uporabnik ročno premakne zemljevid med navigacijo, začasno izklopi samodejno sledenje
+            // Ce uporabnik rocno premakne zemljevid med navigacijo, zacasno izklopi samodejno sledenje
             if gesture.state == .began && parent.isNavigating && parent.isFollowingUser {
                 DispatchQueue.main.async {
                     self.parent.isFollowingUser = false
@@ -896,7 +947,7 @@ struct CustomMapView: UIViewRepresentable {
                 currentUserView = view
                 view.updateHeading(parent.userHeading, mapHeading: heading)
             }
-            if abs(parent.mapHeading - heading) > 0.5 {
+            if abs(parent.mapHeading - heading) > 3.0 {
                 DispatchQueue.main.async {
                     self.parent.mapHeading = heading
                 }
