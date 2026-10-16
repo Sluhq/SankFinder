@@ -33,24 +33,29 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
     }
     
     func checkVersionConfig() {
-        let hostInfo = hosts[currentHostIndex]
-        let scheme = hostInfo.useSsl ? "https" : "http"
-        guard let url = URL(string: "\(scheme)://\(hostInfo.host)/api/app/config") else { return }
-        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
-            guard let self = self, let data = data,
-                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-            
-            let versions = json["versions"] as? [String: Any]
-            let latest = versions?["ios"] as? String ?? versions?["latestIos"] as? String ?? "1.2.0"
-            let notes = versions?["notes"] as? String ?? ""
-            let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
-            
-            DispatchQueue.main.async {
-                self.latestVersion = latest
-                self.versionNotes = notes
-                self.isOutdated = self.isVersionOlder(current: current, latest: latest)
-            }
-        }.resume()
+        for hostInfo in hosts {
+            let scheme = hostInfo.useSsl ? "https" : "http"
+            guard let url = URL(string: "\(scheme)://\(hostInfo.host)/api/app/config") else { continue }
+            URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+                guard let self = self, let data = data,
+                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
+                
+                let versions = json["versions"] as? [String: Any]
+                let latest = versions?["ios"] as? String ?? versions?["latestIos"] as? String ?? "1.2.1"
+                let notes = versions?["notes"] as? String ?? ""
+                let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.1"
+                let motdMsg = json["motd"] as? String
+                
+                DispatchQueue.main.async {
+                    self.latestVersion = latest
+                    self.versionNotes = notes
+                    self.isOutdated = self.isVersionOlder(current: current, latest: latest)
+                    if let m = motdMsg, !m.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        self.motd = m
+                    }
+                }
+            }.resume()
+        }
     }
     
     private var webSocketTask: URLSessionWebSocketTask?

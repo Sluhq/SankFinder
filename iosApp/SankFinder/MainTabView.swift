@@ -6,6 +6,7 @@ struct MainTabView: View {
     @ObservedObject private var bridge = NavigationBridge.shared
     @State private var showSplashScreen: Bool = true
     @AppStorage("hasAcceptedTerms") private var hasAcceptedTerms: Bool = false
+    @State private var dismissedMotd: String? = nil
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -31,9 +32,10 @@ struct MainTabView: View {
             // 2. MATERIAL 3 BOTTOM NAV BAR (Identičen Android BottomNavigation.kt z 18dp zaobljenim vrhom in zlatim krogom)
             MaterialBottomNavBar(selectedIndex: $bridge.selectedTab)
             
-            // 3. VIZUALNA PASICA ZA OBVESTILO UPRAVE NA VRHU ZASLONA (Kot na Androidu)
-            if let alert = globalSync.activePushAlert {
-                VStack {
+            // 3. VIZUALNE PASICE ZA OBVESTILO UPRAVE IN SPOROČILO DNEVA (MOTD)
+            VStack(spacing: 8) {
+                // Obvestilo uprave (Push alert)
+                if let alert = globalSync.activePushAlert {
                     HStack(alignment: .center, spacing: 12) {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(alert.title)
@@ -65,13 +67,52 @@ struct MainTabView: View {
                     )
                     .shadow(color: .black.opacity(0.55), radius: 8, y: 3)
                     .padding(.horizontal, 16)
-                    .padding(.top, 46)
-                    
-                    Spacer()
+                    .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .animation(.spring(), value: globalSync.activePushAlert?.id)
+                
+                // Sporočilo dneva (MOTD - Message of the Day)
+                if let activeMotd = globalSync.motd,
+                   !activeMotd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                   activeMotd != dismissedMotd {
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("Sporočilo dneva")
+                                .font(.subheadline)
+                                .fontWeight(.bold)
+                                .foregroundColor(Theme.drajvGreen)
+                            Text(activeMotd)
+                                .font(.caption)
+                                .foregroundColor(.white)
+                                .lineLimit(4)
+                        }
+                        Spacer()
+                        Button(action: {
+                            withAnimation {
+                                dismissedMotd = activeMotd
+                            }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title3)
+                                .foregroundColor(.gray)
+                        }
+                    }
+                    .padding(14)
+                    .background(Theme.cardDark)
+                    .cornerRadius(14)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(Theme.drajvGreen.opacity(0.8), lineWidth: 1.2)
+                    )
+                    .shadow(color: .black.opacity(0.55), radius: 8, y: 3)
+                    .padding(.horizontal, 16)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
+                
+                Spacer()
             }
+            .padding(.top, 46)
+            .animation(.spring(), value: globalSync.activePushAlert?.id)
+            .animation(.spring(), value: globalSync.motd)
             
             // 4. ANIMIRAN ZAGONSKI / NALAGALNI ZASLON (SPLASH SCREEN) - 100% usklajen z Androidom
             if showSplashScreen {
@@ -89,6 +130,7 @@ struct MainTabView: View {
         }
         .onAppear {
             globalSync.start()
+            globalSync.checkVersionConfig()
             reportCurrentTab(bridge.selectedTab)
         }
         .onChange(of: bridge.selectedTab) { newTab in
