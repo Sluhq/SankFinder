@@ -5,6 +5,7 @@ struct MainTabView: View {
     @StateObject private var globalSync = GlobalSyncManager.shared
     @ObservedObject private var bridge = NavigationBridge.shared
     @State private var showSplashScreen: Bool = true
+    @AppStorage("hasAcceptedTerms") private var hasAcceptedTerms: Bool = false
     
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -80,6 +81,12 @@ struct MainTabView: View {
             }
         }
         .edgesIgnoringSafeArea(.bottom)
+        .fullScreenCover(isPresented: Binding(
+            get: { !hasAcceptedTerms && !showSplashScreen },
+            set: { _ in }
+        )) {
+            LegalTermsView(isConsentMode: true)
+        }
         .onAppear {
             globalSync.start()
             reportCurrentTab(bridge.selectedTab)

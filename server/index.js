@@ -139,11 +139,15 @@ db.exec(`
   );
 `);
 
+// Migracije za pogoje uporabe in GDPR
+try { db.exec("ALTER TABLE app_devices ADD COLUMN terms_accepted INTEGER DEFAULT 0;"); } catch (e) {}
+try { db.exec("ALTER TABLE app_devices ADD COLUMN terms_accepted_at DATETIME;"); } catch (e) {}
+
 // Privzete nastavitve, če še ne obstajajo
 const stmtInsertDefaultSetting = db.prepare('INSERT OR IGNORE INTO app_settings (key, value) VALUES (?, ?)');
 stmtInsertDefaultSetting.run('motd', 'Dobrodošli v posodobljeni različici ŠankFinder!');
-stmtInsertDefaultSetting.run('latest_version_android', '1.2.0');
-stmtInsertDefaultSetting.run('latest_version_ios', '1.2.0');
+stmtInsertDefaultSetting.run('latest_version_android', '1.2.1');
+stmtInsertDefaultSetting.run('latest_version_ios', '1.2.1');
 stmtInsertDefaultSetting.run('min_version', '1.0.0');
 stmtInsertDefaultSetting.run('version_update_notes', 'Na voljo je posodobitev z izboljšanim klepetom, brisanjem sporočil in hitrejšo sinhronizacijo.');
 
@@ -189,14 +193,16 @@ const stmtGetAllMessages = db.prepare(`
 
 // Celoten App - Naprave & Telemetrija
 const stmtUpsertAppDevice = db.prepare(`
-  INSERT INTO app_devices (device_id, model, os_version, app_version, current_screen, ip, first_seen, last_seen)
-  VALUES (@deviceId, @model, @osVersion, @appVersion, @currentScreen, @ip, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+  INSERT INTO app_devices (device_id, model, os_version, app_version, current_screen, ip, terms_accepted, terms_accepted_at, first_seen, last_seen)
+  VALUES (@deviceId, @model, @osVersion, @appVersion, @currentScreen, @ip, coalesce(@termsAccepted, 0), CASE WHEN @termsAccepted = 1 THEN CURRENT_TIMESTAMP ELSE NULL END, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   ON CONFLICT(device_id) DO UPDATE SET
     model = coalesce(@model, model),
     os_version = coalesce(@osVersion, os_version),
     app_version = coalesce(@appVersion, app_version),
     current_screen = coalesce(@currentScreen, current_screen),
     ip = coalesce(@ip, ip),
+    terms_accepted = CASE WHEN @termsAccepted = 1 THEN 1 ELSE terms_accepted END,
+    terms_accepted_at = CASE WHEN @termsAccepted = 1 AND terms_accepted_at IS NULL THEN CURRENT_TIMESTAMP ELSE terms_accepted_at END,
     last_seen = CURRENT_TIMESTAMP
 `);
 const stmtUpdateDeviceScreen = db.prepare(`
@@ -204,6 +210,9 @@ const stmtUpdateDeviceScreen = db.prepare(`
 `);
 const stmtUpdateDeviceScreenAndVersion = db.prepare(`
   UPDATE app_devices SET current_screen = ?, app_version = ?, last_seen = CURRENT_TIMESTAMP WHERE device_id = ?
+`);
+const stmtUpdateDeviceTerms = db.prepare(`
+  UPDATE app_devices SET terms_accepted = 1, terms_accepted_at = CURRENT_TIMESTAMP, last_seen = CURRENT_TIMESTAMP WHERE device_id = ?
 `);
 const stmtGetAllAppDevices = db.prepare(`
   SELECT * FROM app_devices ORDER BY last_seen DESC LIMIT 100
@@ -511,12 +520,99 @@ function verifyWsSignature(timestampStr, signature, deviceId = '') {
 
     const candidates = [
         `${deviceId}:${timestampStr}`,
-        timestampStr,
         `android_app:${timestampStr}`,
         `ios_app:${timestampStr}`
     ];
 
     return verifySignatureMatch(signature, candidates);
+}
+
+let legalTermsData = null;
+try {
+    const termsPath = path.join(__dirname, 'terms.json');
+    if (fs.existsSync(termsPath)) {
+        legalTermsData = JSON.parse(fs.readFileSync(termsPath, 'utf8'));
+    }
+} catch (e) {
+    console.error('Napaka pri branju terms.json:', e.message);
+}
+
+function renderTermsHtml() {
+    const data = legalTermsData || {
+        title: "SPLOŠNI POGOJI UPORABE IN POLITIKA ZASEBNOSTI MOBILNE APLIKACIJE »ŠANKFINDER«",
+        updatedAt: "Oktober 2026",
+        version: "1.2.1",
+        operator: "Razvojna ekipa ŠankFinder (contact@sluga.me)",
+        sections: []
+    };
+    const sectionsHtml = (data.sections || []).map(s => `
+        <div style="background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.08); border-radius:12px; padding:20px; margin-bottom:18px;">
+            <h2 style="color:#e5a93c; font-size:16px; margin:0 0 12px 0; font-weight:700;">${escapeHtml(s.title)}</h2>
+            <div style="color:rgba(255,255,255,0.85); font-size:14px; line-height:1.65; white-space:pre-wrap;">${escapeHtml(s.content)}</div>
+        </div>
+    `).join('');
+
+    return `<!DOCTYPE html>
+<html lang="sl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>${escapeHtml(data.title)}</title>
+    <style>
+        body {
+            background: #0f141c;
+            color: #ffffff;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 24px 16px;
+        }
+        .container {
+            max-width: 860px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 28px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        h1 {
+            color: #e5a93c;
+            font-size: 22px;
+            margin: 0 0 10px 0;
+        }
+        .meta {
+            font-size: 13px;
+            color: rgba(255,255,255,0.6);
+            line-height: 1.5;
+        }
+        .badge {
+            display: inline-block;
+            background: rgba(229,169,60,0.15);
+            color: #e5a93c;
+            border: 1px solid rgba(229,169,60,0.3);
+            border-radius: 6px;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <span class="badge">Uradni pravni dokument</span>
+            <h1>${escapeHtml(data.title)}</h1>
+            <div class="meta">
+                Zadnja posodobitev: ${escapeHtml(data.updatedAt)} &bull; Veljavna različica: v${escapeHtml(data.version)}<br>
+                Upravljavec: ${escapeHtml(data.operator)}
+            </div>
+        </div>
+        ${sectionsHtml}
+    </div>
+</body>
+</html>`;
 }
 
 // 3. HTTP STREŽNIK
@@ -646,9 +742,12 @@ const server = http.createServer((req, res) => {
                 if (dev.deviceId === devId) { live = dev; break; }
             }
             const rawVer = (live && live.appVersion) ? live.appVersion : (d.app_version || '1.0');
+            const isTermsOk = (live && live.termsAccepted != null) ? (live.termsAccepted === 1 ? 1 : 0) : (d.terms_accepted === 1 ? 1 : 0);
             return {
                 ...d,
                 app_version: rawVer,
+                terms_accepted: isTermsOk,
+                terms_accepted_at: d.terms_accepted_at || null,
                 current_screen: (live && live.currentScreen) ? live.currentScreen : d.current_screen,
                 last_seen: (live && live.lastSeen) ? live.lastSeen : d.last_seen
             };
@@ -1227,6 +1326,43 @@ const server = http.createServer((req, res) => {
         }
     }
 
+    // JAVNI API & POGLED: SPLOŠNI POGOJI UPORABE IN POLITIKA ZASEBNOSTI (GDPR)
+    if (pathname === '/api/terms') {
+        res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(legalTermsData || { error: 'Pogoji niso na voljo' }));
+        return;
+    }
+    if (pathname === '/terms') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(renderTermsHtml());
+        return;
+    }
+    if (pathname === '/api/app/terms/accept' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => { body += chunk; });
+        req.on('end', () => {
+            try {
+                const data = JSON.parse(body || '{}');
+                const deviceId = data.deviceId;
+                if (deviceId) {
+                    stmtUpdateDeviceTerms.run(deviceId);
+                    for (const [, dev] of appConnectedClients.entries()) {
+                        if (dev.deviceId === deviceId) {
+                            dev.termsAccepted = 1;
+                            break;
+                        }
+                    }
+                }
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, termsAccepted: 1 }));
+            } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+            }
+        });
+        return;
+    }
+
     // JAVNI API: KONFIGURACIJA IN ŠANK TEDNA ZA APLIKACIJO
     if (pathname === '/api/app/config' && req.method === 'GET') {
         const motdSetting = stmtGetSetting.get('motd');
@@ -1246,10 +1382,15 @@ const server = http.createServer((req, res) => {
             motd: motdSetting ? motdSetting.value : null,
             featuredPub: featuredPub,
             versions: {
-                android: verAndroidSetting ? verAndroidSetting.value : '1.2.0',
-                ios: verIosSetting ? verIosSetting.value : '1.2.0',
+                android: verAndroidSetting ? verAndroidSetting.value : '1.2.1',
+                ios: verIosSetting ? verIosSetting.value : '1.2.1',
                 minVersion: minVerSetting ? minVerSetting.value : '1.0.0',
                 notes: verNotesSetting ? verNotesSetting.value : ''
+            },
+            terms: {
+                version: legalTermsData ? legalTermsData.version : '1.2.1',
+                updatedAt: legalTermsData ? legalTermsData.updatedAt : 'Oktober 2026',
+                url: '/terms'
             }
         }));
         return;
@@ -1365,6 +1506,7 @@ wss.on('connection', (ws, req) => {
         const osVersion = parsedUrl.query.os || 'Android';
         const appVersion = parsedUrl.query.version || parsedUrl.query.appVersion || parsedUrl.query.v || '1.0';
         const screen = parsedUrl.query.screen || 'Glavna stran';
+        const termsAccepted = (parsedUrl.query.terms === '1' || parsedUrl.query.terms === 'true' || parsedUrl.query.termsAccepted === 'true') ? 1 : 0;
 
         const deviceInfo = {
             deviceId,
@@ -1372,6 +1514,7 @@ wss.on('connection', (ws, req) => {
             osVersion,
             appVersion,
             currentScreen: screen,
+            termsAccepted,
             ip: clientIp,
             connectedAt: new Date().toISOString(),
             lastSeen: new Date().toISOString()
@@ -1385,7 +1528,8 @@ wss.on('connection', (ws, req) => {
             osVersion,
             appVersion,
             currentScreen: screen,
-            ip: clientIp
+            ip: clientIp,
+            termsAccepted
         });
 
         // Pošlji začetne nastavitve (npr. MOTD in Šank Tedna), če obstajata
@@ -1439,11 +1583,15 @@ wss.on('connection', (ws, req) => {
             const msg = JSON.parse(messageRaw.toString());
 
             // 1. Poročanje o spremembi zaslona in verzije v aplikaciji
-            if (msg.type === 'screen_change' || msg.type === 'ping' || msg.screen || msg.version) {
+            if (msg.type === 'screen_change' || msg.type === 'ping' || msg.screen || msg.version || msg.type === 'terms_accepted' || msg.termsAccepted) {
                 const dev = appConnectedClients.get(ws);
                 if (dev) {
                     if (msg.screen) dev.currentScreen = msg.screen;
                     if (msg.version && msg.version !== '1.0') dev.appVersion = msg.version;
+                    if (msg.type === 'terms_accepted' || msg.termsAccepted) {
+                        dev.termsAccepted = 1;
+                        stmtUpdateDeviceTerms.run(dev.deviceId);
+                    }
                     dev.lastSeen = new Date().toISOString();
                     if (dev.appVersion) {
                         stmtUpdateDeviceScreenAndVersion.run(dev.currentScreen, dev.appVersion, dev.deviceId);
@@ -2585,6 +2733,7 @@ function renderAdminDashboardHtml() {
         <div class="panel-header">
           <h2 class="panel-title">Pregled Naprav in Telemetrija Uporabnikov</h2>
           <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <a href="/terms" target="_blank" class="btn btn-sm" style="background:rgba(229,169,60,0.15); color:var(--gold); border:1px solid rgba(229,169,60,0.3); text-decoration:none; display:inline-flex; align-items:center; gap:6px;">Pogoji uporabe & GDPR</a>
             <label style="font-size:12px; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; gap:6px;">
               <input type="checkbox" id="filter-online-only" onchange="renderDevicesTable()"> Samo Online
             </label>
@@ -2599,6 +2748,7 @@ function renderAdminDashboardHtml() {
                 <th>Platforma in Model</th>
                 <th>ID Naprave</th>
                 <th>App Verzija</th>
+                <th>Pogoji (GDPR)</th>
                 <th>Trenutni Zaslon v Živo</th>
                 <th>Status / Zadnja Aktivnost</th>
                 <th>IP Naslov</th>
@@ -2606,7 +2756,7 @@ function renderAdminDashboardHtml() {
               </tr>
             </thead>
             <tbody id="devices-tbody">
-              <tr><td colspan="7" style="text-align:center; color:var(--text-muted);">Nalaganje naprav...</td></tr>
+              <tr><td colspan="8" style="text-align:center; color:var(--text-muted);">Nalaganje naprav...</td></tr>
             </tbody>
           </table>
         </div>
@@ -3281,6 +3431,11 @@ function renderAdminDashboardHtml() {
         else if (screen.includes('Klapa') || screen.includes('Pivska')) screenColor = 'var(--gold)';
         else if (screen.includes('Zgodovina')) screenColor = 'var(--purple)';
 
+        const isTermsAccepted = (d.terms_accepted === 1 || (liveDev && liveDev.termsAccepted === 1));
+        const termsBadge = isTermsAccepted
+          ? '<span class="badge-tag" style="background:var(--green-bg); color:var(--green); border-color:rgba(16,185,129,0.3);" title="Uporabnik je sprejel Pogoje uporabe in GDPR">&#10003; Sprejeti</span>'
+          : '<span class="badge-tag" style="background:rgba(239,68,68,0.15); color:var(--red); border-color:rgba(239,68,68,0.4);" title="Uporabnik še ni potrdil pogojev">Čaka potrditev</span>';
+
         return \`
           <tr>
             <td>
@@ -3292,6 +3447,7 @@ function renderAdminDashboardHtml() {
               \${devId.length > 18 ? devId.substring(0, 18) + '...' : devId}
             </td>
             <td>\${versionBadge}</td>
+            <td>\${termsBadge}</td>
             <td>
               <span class="badge-tag" style="background:rgba(255,255,255,0.05); color:\${screenColor}; border-color:\${screenColor};">
                 \${escapeHtml(screen)}

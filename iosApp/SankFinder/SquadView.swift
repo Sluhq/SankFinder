@@ -291,6 +291,22 @@ struct SquadView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 16)
                 }
+                
+                // Obvestilo o pogojih in deljenju lokacije
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 13))
+                        .foregroundColor(Theme.beerGold)
+                    Text("Z vstopom v klapo soglašaš s Pogoji uporabe in deljenjem lokacije s člani sobe (podatki se samodejno izbrišejo po 24 urah).")
+                        .font(.system(size: 11))
+                        .foregroundColor(Theme.textMuted)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(10)
+                .background(Theme.surfaceDark.opacity(0.6))
+                .cornerRadius(10)
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.06), lineWidth: 1))
+                .padding(.top, 4)
             }
             .padding(.horizontal, 24)
             

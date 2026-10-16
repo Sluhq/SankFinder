@@ -78,6 +78,9 @@ object GlobalSyncManager {
     private val _versionNotes = MutableStateFlow<String?>("")
     val versionNotes: StateFlow<String?> = _versionNotes.asStateFlow()
 
+    private val _hasAcceptedTerms = MutableStateFlow(false)
+    val hasAcceptedTerms: StateFlow<Boolean> = _hasAcceptedTerms.asStateFlow()
+
     fun isVersionOlder(current: String, latest: String): Boolean {
         return try {
             val currParts = current.split(".").map { it.filter { c -> c.isDigit() }.toIntOrNull() ?: 0 }
@@ -95,12 +98,68 @@ object GlobalSyncManager {
         }
     }
 
+    fun isTermsAccepted(context: Context? = null): Boolean {
+        if (_hasAcceptedTerms.value) return true
+        val ctx = context ?: appContext ?: return false
+        val prefs = ctx.getSharedPreferences("sankfinder_global", Context.MODE_PRIVATE)
+        val accepted = prefs.getBoolean("has_accepted_terms", false)
+        _hasAcceptedTerms.value = accepted
+        return accepted
+    }
+
+    fun reportTermsAccepted(context: Context? = null) {
+        _hasAcceptedTerms.value = true
+        val ctx = context ?: appContext
+        ctx?.let {
+            val prefs = it.getSharedPreferences("sankfinder_global", Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("has_accepted_terms", true).apply()
+        }
+
+        try {
+            val json = JSONObject().apply {
+                put("type", "terms_accepted")
+                put("accepted", true)
+                put("deviceId", deviceId)
+            }
+            activeWebSocket?.send(json.toString())
+        } catch (e: Exception) {
+            Log.w(TAG, "Napaka pri oddaji potrditve pogojev prek WS: ${e.message}")
+        }
+
+        scope.launch {
+            for (hostInfo in hosts) {
+                try {
+                    val scheme = if (hostInfo.second) "https" else "http"
+                    val url = "$scheme://${hostInfo.first}/api/app/terms/accept"
+                    val bodyJson = JSONObject().apply {
+                        put("deviceId", deviceId)
+                        put("clientType", "android")
+                        put("accepted", true)
+                    }
+                    val body = okhttp3.RequestBody.create(
+                        okhttp3.MediaType.parse("application/json; charset=utf-8"),
+                        bodyJson.toString()
+                    )
+                    val request = Request.Builder().url(url).post(body).build()
+                    val response = NetworkClient.okHttpClient.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        Log.d(TAG, "Potrditev pogojev uspesno poslana na ${hostInfo.first}")
+                        break
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Neuspesno posiljanje pogojev na ${hostInfo.first}: ${e.message}")
+                }
+            }
+        }
+    }
+
     fun init(context: Context) {
         if (isStarted) return
         isStarted = true
         appContext = context.applicationContext
 
         val prefs = context.getSharedPreferences("sankfinder_global", Context.MODE_PRIVATE)
+        _hasAcceptedTerms.value = prefs.getBoolean("has_accepted_terms", false)
         deviceId = prefs.getString("device_id", null) ?: run {
             val newId = "dev_" + UUID.randomUUID().toString().take(8)
             prefs.edit().putString("device_id", newId).apply()
@@ -204,7 +263,8 @@ object GlobalSyncManager {
         val hostInfo = hosts[currentHostIndex]
         val scheme = if (hostInfo.second) "wss" else "ws"
         val appVersion = try { com.example.sankfinder.BuildConfig.VERSION_NAME } catch (e: Exception) { "1.2.1" }
-        val url = "$scheme://${hostInfo.first}/ws?clientType=app&deviceId=$deviceId&model=$encodedModel&os=$encodedOs&screen=$encodedScreen&version=$appVersion"
+        val termsParam = if (_hasAcceptedTerms.value) "1" else "0"
+        val url = "$scheme://${hostInfo.first}/ws?clientType=app&deviceId=$deviceId&model=$encodedModel&os=$encodedOs&screen=$encodedScreen&version=$appVersion&terms=$termsParam"
         val request = Request.Builder().url(url).build()
 
         try {

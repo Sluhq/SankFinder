@@ -18,6 +18,7 @@ struct SettingsView: View {
     
     @State private var showAboutModal: Bool = false
     @State private var showCustomLimitModal: Bool = false
+    @State private var showLegalTermsModal: Bool = false
     @State private var customLimitInput: String = ""
     
     @ObservedObject private var globalSync = GlobalSyncManager.shared
@@ -259,6 +260,39 @@ struct SettingsView: View {
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.darkBorder, lineWidth: 1))
                         }
                         .padding(.horizontal, 16)
+                        
+                        // 7. PRAVNE INFORMACIJE & ZASEBNOST (GDPR)
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Pravne informacije & Zasebnost")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
+                            
+                            Button(action: { showLegalTermsModal = true }) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "doc.text.fill")
+                                        .font(.system(size: 18))
+                                        .foregroundColor(Theme.beerGold)
+                                    
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Pogoji uporabe in Politika zasebnosti (GDPR)")
+                                            .font(.system(size: 14, weight: .bold))
+                                            .foregroundColor(.white)
+                                        Text("Splošni pogoji, pravila obnašanja in varstvo osebnih podatkov")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(Theme.textMuted)
+                                    }
+                                    Spacer()
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption)
+                                        .foregroundColor(Theme.textMuted)
+                                }
+                                .padding(14)
+                                .background(Theme.surfaceVariantDark.opacity(0.45))
+                                .cornerRadius(12)
+                                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.darkBorder, lineWidth: 1))
+                            }
+                        }
+                        .padding(.horizontal, 16)
                     }
                     .padding(.bottom, 80) // Prostor za BottomNavBar
                 }
@@ -269,6 +303,9 @@ struct SettingsView: View {
         }
         .sheet(isPresented: $showCustomLimitModal) {
             customLimitModalView
+        }
+        .sheet(isPresented: $showLegalTermsModal) {
+            LegalTermsView(isConsentMode: false)
         }
         .onAppear {
             GlobalSyncManager.shared.reportScreen("Nastavitve")

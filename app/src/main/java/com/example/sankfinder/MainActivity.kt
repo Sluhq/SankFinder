@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val navController = rememberNavController()
             val isDarkTheme by themeDataStore.isDarkTheme.collectAsState(initial = false)
+            val hasAcceptedTerms by com.example.sankfinder.network.GlobalSyncManager.hasAcceptedTerms.collectAsState()
 
             // Poslušaj globalna potisna obvestila medtem ko je aplikacija odprta
             var inAppAlert by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.example.sankfinder.network.PushNotificationEvent?>(null) }
@@ -92,6 +93,17 @@ class MainActivity : ComponentActivity() {
                         navController = navController,
                         themeDataStore = themeDataStore
                     )
+
+                    // Dialog za prvo sprejetje Splošnih pogojev uporabe in Politike zasebnosti (GDPR)
+                    if (!hasAcceptedTerms) {
+                        com.example.sankfinder.ui.pages.LegalTermsDialog(
+                            isConsentMode = true,
+                            onDismiss = {},
+                            onAccept = {
+                                com.example.sankfinder.network.GlobalSyncManager.reportTermsAccepted(this@MainActivity)
+                            }
+                        )
+                    }
 
                     // Pasica za Sporočilo Dneva (MOTD)
                     val activeMotd = currentMotd
