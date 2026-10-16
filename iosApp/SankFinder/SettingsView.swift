@@ -23,7 +23,7 @@ struct SettingsView: View {
     
     @ObservedObject private var globalSync = GlobalSyncManager.shared
     private var currentVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.1"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.2"
     }
     
     var body: some View {

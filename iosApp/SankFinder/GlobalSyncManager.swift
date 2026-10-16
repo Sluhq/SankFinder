@@ -41,9 +41,9 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
                 
                 let versions = json["versions"] as? [String: Any]
-                let latest = versions?["ios"] as? String ?? versions?["latestIos"] as? String ?? "1.2.1"
+                let latest = versions?["ios"] as? String ?? versions?["latestIos"] as? String ?? "1.2.2"
                 let notes = versions?["notes"] as? String ?? ""
-                let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.1"
+                let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.2"
                 let motdMsg = json["motd"] as? String
                 
                 DispatchQueue.main.async {
@@ -214,8 +214,8 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
         let scheme = hostInfo.useSsl ? "wss" : "ws"
         let timestamp = Int64(Date().timeIntervalSince1970 * 1000)
         let signature = SecureStorage.shared.generateSignature(timestamp: timestamp, deviceId: deviceId)
-        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.1"
-        let encVer = currentVer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "1.2.1"
+        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.2"
+        let encVer = currentVer.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "1.2.2"
         let isTerms = UserDefaults.standard.bool(forKey: "hasAcceptedTerms") ? "1" : "0"
         let urlString = "\(scheme)://\(hostInfo.host)/ws?clientType=app&deviceId=\(deviceId)&model=\(encModel)&os=\(encOs)&screen=\(encScreen)&version=\(encVer)&terms=\(isTerms)&t=\(timestamp)&sig=\(signature)"
         
@@ -301,9 +301,9 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
                 self.motd = json["message"] as? String
             } else if type == "version_info" || type == "app_version_update" {
                 let verObj = (json["versions"] as? [String: Any]) ?? json
-                let latest = verObj["ios"] as? String ?? verObj["latestIos"] as? String ?? "1.2.1"
+                let latest = verObj["ios"] as? String ?? verObj["latestIos"] as? String ?? "1.2.2"
                 let notes = verObj["notes"] as? String ?? ""
-                let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.1"
+                let current = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.2"
                 self.latestVersion = latest
                 self.versionNotes = notes
                 self.isOutdated = self.isVersionOlder(current: current, latest: latest)
@@ -326,7 +326,7 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
             }
         }
         
-        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.2"
         let pingObj: [String: Any] = [
             "type": "ping",
             "deviceId": deviceId,
@@ -340,7 +340,7 @@ class GlobalSyncManager: NSObject, ObservableObject, UNUserNotificationCenterDel
     }
     
     private func sendScreenChange(_ screen: String) {
-        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0"
+        let currentVer = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.2"
         let obj: [String: Any] = [
             "type": "screen_change",
             "screen": screen,

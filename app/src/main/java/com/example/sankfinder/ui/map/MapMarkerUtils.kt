@@ -472,16 +472,29 @@ object MapMarkerUtils {
         val cx = sizePx / 2f
         val cy = sizePx / 2f
 
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1E293B") // Temna elegantna barva kot v Google Maps
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#202124")
+            style = Paint.Style.FILL
+        }
+        canvas.drawCircle(cx, cy, (sizePx / 2f) - (2f * density), bgPaint)
+
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#3C4043")
             style = Paint.Style.STROKE
-            strokeWidth = 6f * density
+            strokeWidth = 1.5f * density
+        }
+        canvas.drawCircle(cx, cy, (sizePx / 2f) - (2f * density), borderPaint)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE // Ostra bela smerna puščica kot v Google Maps
+            style = Paint.Style.STROKE
+            strokeWidth = 5.5f * density
             strokeCap = Paint.Cap.ROUND
             strokeJoin = Paint.Join.ROUND
         }
 
         val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.parseColor("#1E293B")
+            color = Color.WHITE
             style = Paint.Style.FILL
         }
 

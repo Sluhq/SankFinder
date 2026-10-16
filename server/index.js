@@ -1382,13 +1382,13 @@ const server = http.createServer((req, res) => {
             motd: motdSetting ? motdSetting.value : null,
             featuredPub: featuredPub,
             versions: {
-                android: verAndroidSetting ? verAndroidSetting.value : '1.2.1',
-                ios: verIosSetting ? verIosSetting.value : '1.2.1',
+                android: verAndroidSetting ? verAndroidSetting.value : '1.2.2',
+                ios: verIosSetting ? verIosSetting.value : '1.2.2',
                 minVersion: minVerSetting ? minVerSetting.value : '1.0.0',
                 notes: verNotesSetting ? verNotesSetting.value : ''
             },
             terms: {
-                version: legalTermsData ? legalTermsData.version : '1.2.1',
+                version: legalTermsData ? legalTermsData.version : '1.2.2',
                 updatedAt: legalTermsData ? legalTermsData.updatedAt : 'Oktober 2026',
                 url: '/terms'
             }
@@ -3413,7 +3413,7 @@ function renderAdminDashboardHtml() {
         const model = d.model || 'Neznan model';
         const os = d.os_version || d.osVersion || 'Neznan OS';
         const isIos = (model + ' ' + os).toLowerCase().includes('ios') || (model + ' ' + os).toLowerCase().includes('iphone');
-        const latestTarget = isIos ? (globalData.settings?.latest_version_ios || '1.2.1') : (globalData.settings?.latest_version_android || '1.2.1');
+        const latestTarget = isIos ? (globalData.settings?.latest_version_ios || '1.2.2') : (globalData.settings?.latest_version_android || '1.2.2');
         const appVer = (liveDev && liveDev.appVersion) ? liveDev.appVersion : (d.app_version || d.appVersion || '1.0');
         const screen = (liveDev ? liveDev.currentScreen : d.current_screen) || 'Zemljevid & Šanki';
         const ip = d.ip || 'unknown';

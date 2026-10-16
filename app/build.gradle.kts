@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.sankfinder"
         minSdk = 31
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2.1"
+        versionCode = 4
+        versionName = "1.2.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

@@ -204,18 +204,18 @@ object SankNotificationHelper {
         )
 
         val builder = NotificationCompat.Builder(context, NAV_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_menu_directions)
-            .setLargeIcon(largeManeuverIcon) // Velika smerna puščica na desni kot v Google Maps (slika 3)
+            .setSmallIcon(R.mipmap.sankfinder_logo)
+            .setLargeIcon(largeManeuverIcon) // Velika smerna puščica v krogu kot v Google Maps
             .setContentTitle(title)
-            .setContentText(body)
-            .setSubText(subheader)
+            .setContentText("Peš $durTotal ($distTotal) • Prihod $eta")
+            .setSubText("Cilj: $destLokalName")
             .setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setPriority(NotificationCompat.PRIORITY_LOW) // Brez nadležnega spustnega okna
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setContentIntent(appPendingIntent)
             .setOngoing(true)
             .setAutoCancel(false)
-            .setProgress(100, progress, false)
+            .setProgress(100, progress, false) // Dejanski zvezni indikator napredka kot v Google Maps
             .addAction(
                 android.R.drawable.ic_menu_close_clear_cancel,
                 "Končaj navigacijo",
@@ -224,8 +224,8 @@ object SankNotificationHelper {
             .setStyle(
                 NotificationCompat.BigTextStyle()
                     .setBigContentTitle(title)
-                    .setSummaryText(subheader)
-                    .bigText("$body\nNapredek poti: $progress %")
+                    .setSummaryText("Prihod $eta")
+                    .bigText("Peš $durTotal ($distTotal) do cilja: $destLokalName\nNapredek poti: $progress %")
             )
 
         try {
